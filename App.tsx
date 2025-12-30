@@ -1,364 +1,465 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { StatusBar } from './components/StatusBar';
-import { PlayerStats, ActiveMob, DamagePop } from './types';
-import { SRO_MOBS, getXpRequired } from './constants';
-import { getOracleAdvice } from './services/geminiService';
+import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, ItemType, Skill, PlayerDebuff, MobAbilityType, DungeonTemplate, MarketListing } from './types';
+import { SRO_MOBS, SRO_SKILLS, SRO_DUNGEONS, getXpRequired, RARITY_COLORS, POTION_CONFIG, ITEM_RESALE_MULTIPLIERS } from './constants';
 
-const STORAGE_KEY = 'sro_legend_journey_stats';
+const STORAGE_KEY = 'sro_legend_journey_stats_v4_final';
+const MARKET_STORAGE_KEY = 'sro_global_pazar_listings_v4';
 
 const App: React.FC = () => {
-  // Initialize stats from localStorage or defaults
   const [stats, setStats] = useState<PlayerStats>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.warn("Could not load local save data:", e);
-      }
+        const parsed = JSON.parse(saved);
+        if (!parsed.potions) parsed.potions = { hp: 10, mp: 10 };
+        return parsed;
+      } catch (e) { console.warn(e); }
     }
     return {
-      lvl: 1,
-      xp: 0,
-      gold: 0,
-      hp: 250,
-      maxHp: 250,
-      atk: 22,
-      def: 10
+      lvl: 1, xp: 0, gold: 500, hp: 300, maxHp: 300, mp: 200, maxMp: 200, atk: 25, def: 12,
+      inventory: [], potions: { hp: 10, mp: 10 }, isPremium: false, autoPotionEnabled: false
     };
+  });
+
+  const [globalMarket, setGlobalMarket] = useState<MarketListing[]>(() => {
+    const saved = localStorage.getItem(MARKET_STORAGE_KEY);
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    return [];
   });
 
   const [currentMob, setCurrentMob] = useState<ActiveMob | null>(null);
   const [damagePops, setDamagePops] = useState<DamagePop[]>([]);
-  const [oracleMsg, setOracleMsg] = useState("Kılıcını hazırla, macera başlıyor!");
   const [isHurt, setIsHurt] = useState(false);
   const [showLevelUp, setShowLevelUp] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [lastDrop, setLastDrop] = useState<Item | null>(null);
+  const [showInventory, setShowInventory] = useState(false);
+  const [showMarket, setShowMarket] = useState(false);
+  const [showDungeons, setShowDungeons] = useState(false);
+  const [showGlobalPazar, setShowGlobalPazar] = useState(false);
+  const [showPremiumShop, setShowPremiumShop] = useState(false);
+  const [marketFilter, setMarketFilter] = useState<ItemType | 'ALL'>('ALL');
+  
+  const [activeDungeon, setActiveDungeon] = useState<{ template: DungeonTemplate, currentWave: number } | null>(null);
+  const [skillCooldowns, setSkillCooldowns] = useState<Record<string, number>>({});
+  const [activeDebuffs, setActiveDebuffs] = useState<PlayerDebuff[]>([]);
   const nextPopId = useRef(0);
+  
+  const statsRef = useRef(stats);
+  useEffect(() => { statsRef.current = stats; }, [stats]);
 
   const tg = window.Telegram?.WebApp;
 
-  // Auto-save to localStorage whenever stats change
+  // Persist Market and Stats
+  useEffect(() => {
+    localStorage.setItem(MARKET_STORAGE_KEY, JSON.stringify(globalMarket));
+  }, [globalMarket]);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
   }, [stats]);
 
-  useEffect(() => {
-    if (tg) {
-      tg.expand();
-      tg.ready();
-      tg.setHeaderColor('#0f172a');
-      tg.setBackgroundColor('#020617');
-    }
-  }, [tg]);
+  const equippedItems = useMemo(() => stats.inventory.filter(i => i.isEquipped), [stats.inventory]);
+  const bonusAtk = useMemo(() => equippedItems.reduce((s, i) => s + i.atkBonus, 0), [equippedItems]);
+  const bonusDef = useMemo(() => equippedItems.reduce((s, i) => s + i.defBonus, 0), [equippedItems]);
+  const bonusHp = useMemo(() => equippedItems.reduce((s, i) => s + i.hpBonus, 0), [equippedItems]);
 
-  const updateOracle = useCallback(async () => {
-    const msg = await getOracleAdvice(stats.lvl, "Jang'an Outskirts");
-    setOracleMsg(msg);
-  }, [stats.lvl]);
+  const totalAtk = stats.atk + bonusAtk;
+  const totalDef = stats.def + bonusDef;
+  const totalMaxHp = stats.maxHp + bonusHp;
+  const totalMaxMp = stats.maxMp;
+
+  const isStunned = useMemo(() => activeDebuffs.some(d => d.type === 'STUN' && d.endTime > Date.now()), [activeDebuffs]);
+
+  // Game Logic Loops
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setSkillCooldowns(prev => {
+        const updated = { ...prev };
+        let changed = false;
+        for (const id in updated) {
+          if (updated[id] <= now) { delete updated[id]; changed = true; }
+        }
+        return changed ? updated : prev;
+      });
+      setActiveDebuffs(prev => {
+        const filtered = prev.filter(d => d.endTime > now);
+        return filtered.length !== prev.length ? filtered : prev;
+      });
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
-    updateOracle();
-  }, [updateOracle]);
+    const autoPotionTimer = setInterval(() => {
+      if (statsRef.current.isPremium && statsRef.current.autoPotionEnabled) {
+        if (statsRef.current.hp < totalMaxHp * 0.4 && statsRef.current.potions.hp > 0) usePotion('hp');
+        if (statsRef.current.mp < totalMaxMp * 0.3 && statsRef.current.potions.mp > 0) usePotion('mp');
+      }
+    }, 2000);
+    return () => clearInterval(autoPotionTimer);
+  }, [totalMaxHp, totalMaxMp]);
+
+  useEffect(() => { if (tg) { tg.expand(); tg.ready(); } }, [tg]);
 
   const spawnMob = useCallback(() => {
-    const validMobs = SRO_MOBS.filter(m => Math.abs(m.lvl - stats.lvl) <= 5);
-    const template = validMobs.length > 0 
-      ? validMobs[Math.floor(Math.random() * validMobs.length)]
-      : SRO_MOBS[0];
-    
-    setCurrentMob({
-      ...template,
-      curHp: template.hp
-    });
-  }, [stats.lvl]);
+    let template;
+    if (activeDungeon) {
+      const isLastWave = activeDungeon.currentWave === activeDungeon.template.waves;
+      if (isLastWave) {
+        template = SRO_MOBS.find(m => m.id === activeDungeon.template.bossId) || SRO_MOBS[0];
+        setCurrentMob({ ...template, curHp: template.hp, lastAbilityTime: {}, isCharging: false, isBoss: true });
+      } else {
+        const pool = SRO_MOBS.filter(m => activeDungeon.template.mobPool.includes(m.id));
+        template = pool[Math.floor(Math.random() * pool.length)];
+        setCurrentMob({ ...template, curHp: template.hp, lastAbilityTime: {}, isCharging: false });
+      }
+    } else {
+      const validMobs = SRO_MOBS.filter(m => Math.abs(m.lvl - stats.lvl) <= 3);
+      template = validMobs.length > 0 ? validMobs[Math.floor(Math.random() * validMobs.length)] : SRO_MOBS[0];
+      setCurrentMob({ ...template, curHp: template.hp, lastAbilityTime: {}, isCharging: false });
+    }
+  }, [stats.lvl, activeDungeon]);
 
-  useEffect(() => {
-    if (!currentMob) spawnMob();
-  }, [currentMob, spawnMob]);
+  useEffect(() => { if (!currentMob) spawnMob(); }, [currentMob, spawnMob]);
 
-  const addDamagePop = (value: number | string, color: string, isCrit = false, isAbsorb = false) => {
+  const addDamagePop = (value: number | string, color: string, isCrit = false, isSkill = false) => {
     const id = nextPopId.current++;
-    const newPop = {
-      id,
-      value: typeof value === 'number' ? value : 0,
-      textValue: typeof value === 'string' ? value : undefined,
-      color: isCrit ? "#ffffff" : (isAbsorb ? "#94a3b8" : color),
-      x: 35 + Math.random() * 30,
-      y: 30 + Math.random() * 30
-    };
-    // @ts-ignore - Adding custom property for display flexibility
-    newPop.isAbsorb = isAbsorb;
-    
-    setDamagePops(prev => [...prev, newPop as any]);
-    setTimeout(() => {
-      setDamagePops(prev => prev.filter(p => p.id !== id));
-    }, 800);
+    setDamagePops(prev => [...prev, {
+      id, value: typeof value === 'number' ? value : 0, textValue: typeof value === 'string' ? value : undefined,
+      color, x: 35 + Math.random() * 30, y: 30 + Math.random() * 30, isSkill
+    }]);
+    setTimeout(() => { setDamagePops(prev => prev.filter(p => p.id !== id)); }, 1000);
   };
 
-  const handleAttack = () => {
-    if (!currentMob || stats.hp <= 0) return;
-
-    const isCrit = Math.random() < 0.15;
-    const baseDmg = stats.atk + Math.floor(Math.random() * 12);
-    const finalDmg = isCrit ? Math.floor(baseDmg * 2.2) : baseDmg;
-    
-    addDamagePop(finalDmg, "#fcd34d", isCrit);
-
-    setCurrentMob(prev => {
-      if (!prev) return null;
-      const newHp = prev.curHp - finalDmg;
-      if (newHp <= 0) {
-        handleMobDefeat(prev);
-        return null;
-      }
-      return { ...prev, curHp: newHp };
+  const usePotion = (type: 'hp' | 'mp') => {
+    if (statsRef.current.potions[type] <= 0) return;
+    setStats(prev => {
+      const nextVal = type === 'hp' ? Math.min(totalMaxHp, prev.hp + POTION_CONFIG.HP_POTION.heal) : Math.min(totalMaxMp, prev.mp + POTION_CONFIG.MP_POTION.heal);
+      return { ...prev, [type]: nextVal, potions: { ...prev.potions, [type]: prev.potions[type] - 1 } };
     });
-
-    if (tg?.HapticFeedback) {
-      tg.HapticFeedback.impactOccurred('light');
-    }
+    addDamagePop(type === 'hp' ? POTION_CONFIG.HP_POTION.heal : POTION_CONFIG.MP_POTION.heal, type === 'hp' ? '#22c55e' : '#0ea5e9');
   };
 
   const handleMobDefeat = (mob: ActiveMob) => {
+    const multiplier = stats.isPremium ? 2.0 : 1.0;
+    const xpReward = (mob.lvl / 2) * multiplier;
+    const goldReward = mob.goldReward * multiplier;
+
+    let droppedItem: Item | null = null;
+    const isDungeonDrop = activeDungeon && mob.isBoss;
+    const dropChance = isDungeonDrop ? 1.0 : 0.15; 
+
+    if (Math.random() < dropChance) {
+      const types: ItemType[] = ['WEAPON', 'SHIELD', 'ARMOR', 'HELMET', 'ACCESSORY'];
+      const rarities: ItemRarity[] = isDungeonDrop && Math.random() < activeDungeon.template.specialDropRate ? ['MOON', 'SUN'] : ['COMMON', 'STAR', 'MOON'];
+      const randType = types[Math.floor(Math.random() * types.length)];
+      const randRarity = rarities[Math.floor(Math.random() * rarities.length)] as ItemRarity;
+      
+      const accNames = ["Necklace", "Earring", "Ring"];
+      const finalName = randType === 'ACCESSORY' ? accNames[Math.floor(Math.random()*accNames.length)] : randType;
+
+      droppedItem = {
+        id: Math.random().toString(36).substr(2, 9),
+        name: `${randRarity} ${finalName}`,
+        type: randType, rarity: randRarity, lvl: mob.lvl,
+        atkBonus: randType === 'WEAPON' ? mob.lvl * (randRarity === 'SUN' ? 15 : 6) : 0,
+        defBonus: (randType !== 'WEAPON' && randType !== 'ACCESSORY') ? mob.lvl * (randRarity === 'SUN' ? 10 : 4) : (randType === 'ACCESSORY' ? 0 : 0),
+        hpBonus: mob.lvl * (randRarity === 'SUN' ? 150 : 35) + (randType === 'ACCESSORY' ? mob.lvl * 50 : 0),
+        isEquipped: false
+      };
+      setLastDrop(droppedItem);
+    }
+
+    if (activeDungeon) {
+      if (mob.isBoss) {
+        setStats(prev => ({ ...prev, gold: prev.gold + activeDungeon.template.goldReward * multiplier }));
+        setActiveDungeon(null);
+      } else {
+        setActiveDungeon(prev => prev ? ({ ...prev, currentWave: prev.currentWave + 1 }) : null);
+      }
+    }
+
     setStats(prev => {
-      let newXp = prev.xp + mob.xpReward;
+      let newXp = prev.xp + xpReward;
       let newLvl = prev.lvl;
-      let newMaxHp = prev.maxHp;
-      let newAtk = prev.atk;
-      let newDef = prev.def;
-      let newHp = prev.hp;
       let leveledUp = false;
-
-      while (newXp >= getXpRequired(newLvl)) {
-        newXp -= getXpRequired(newLvl);
-        newLvl++;
-        newMaxHp += 75;
-        newHp = newMaxHp;
-        newAtk += 7;
-        newDef += 5; // Direct defense improvement through leveling
-        leveledUp = true;
-      }
-
-      if (leveledUp) {
-        setShowLevelUp(true);
-        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-        setTimeout(() => setShowLevelUp(false), 3000);
-        updateOracle();
-      }
-
+      while (newXp >= getXpRequired(newLvl)) { newXp -= getXpRequired(newLvl); newLvl++; leveledUp = true; }
+      if (leveledUp) { setShowLevelUp(true); setTimeout(() => setShowLevelUp(false), 3000); }
       return {
-        ...prev,
-        lvl: newLvl,
-        xp: newXp,
-        gold: prev.gold + mob.goldReward,
-        maxHp: newMaxHp,
-        hp: newHp,
-        atk: newAtk,
-        def: newDef
+        ...prev, lvl: newLvl, xp: newXp, gold: prev.gold + goldReward,
+        maxHp: leveledUp ? prev.maxHp + 100 : prev.maxHp, maxMp: leveledUp ? prev.maxMp + 40 : prev.maxMp,
+        hp: leveledUp ? (prev.maxHp + 100 + bonusHp) : prev.hp, mp: leveledUp ? (prev.maxMp + 40) : prev.mp,
+        atk: leveledUp ? prev.atk + 15 : prev.atk, def: leveledUp ? prev.def + 5 : prev.def,
+        inventory: droppedItem ? [...prev.inventory, droppedItem] : prev.inventory
       };
     });
   };
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (currentMob && stats.hp > 0 && !showLevelUp) {
-        // Wider range of attack (Balance) from mob: 30% variance
-        const variance = currentMob.atk * 0.30;
-        const rawDmg = currentMob.atk + (Math.random() * (variance * 2) - variance);
-        
-        // Defense logic: Flat reduction + percentage mitigation
-        // Higher defense makes you significantly tankier against lower level mobs
-        const flatReduction = stats.def * 0.8;
-        const percentageMitigation = Math.min(0.5, stats.def / 500); // Caps at 50% extra reduction
-        
-        let mitigatedDmg = Math.floor((rawDmg - flatReduction) * (1 - percentageMitigation));
-        
-        // Block chance: Small chance to completely nullify low damage hits based on def
-        const blockChance = Math.min(0.15, stats.def / 1000);
-        const isBlock = Math.random() < blockChance;
-        
-        if (isBlock) mitigatedDmg = 0;
-        
-        // Minimum damage of 1 if hit connects
-        const finalDmg = Math.max(isBlock ? 0 : 1, mitigatedDmg);
-        const isAbsorb = finalDmg < rawDmg * 0.5 && !isBlock;
-
-        if (isBlock) {
-          addDamagePop("BLOCK", "#94a3b8", false, true);
-        } else {
-          addDamagePop(finalDmg, "#ef4444", false, isAbsorb);
-        }
-        
-        setIsHurt(true);
-        if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-        setTimeout(() => setIsHurt(false), 200);
-
-        setStats(prev => {
-          const nextHp = prev.hp - finalDmg;
-          return { ...prev, hp: Math.max(0, nextHp) };
-        });
+  const mobAttack = useCallback(() => {
+    if (!currentMob) return;
+    setIsHurt(true);
+    setTimeout(() => setIsHurt(false), 200);
+    const rawDmg = currentMob.atk;
+    const reducedDmg = Math.max(5, rawDmg - totalDef / 3);
+    const finalDmg = Math.floor(reducedDmg * (0.9 + Math.random() * 0.2));
+    addDamagePop(finalDmg, '#ef4444');
+    setStats(prev => {
+      const newHp = prev.hp - finalDmg;
+      if (newHp <= 0) {
+        alert("YENİLDİN! Şehre dönülüyor...");
+        setActiveDungeon(null);
+        return { ...prev, hp: prev.maxHp + bonusHp, mp: prev.maxMp, xp: Math.max(0, prev.xp - getXpRequired(prev.lvl) * 0.05) };
       }
-    }, 3000);
+      return { ...prev, hp: newHp };
+    });
+  }, [currentMob, totalDef, bonusHp]);
 
-    return () => clearInterval(timer);
-  }, [currentMob, stats.hp, stats.def, showLevelUp, tg]);
+  const useSkill = useCallback((skill: Skill) => {
+    if (!currentMob || isStunned || skillCooldowns[skill.id]) return;
+    if (stats.mp < skill.mpCost) { addDamagePop("NO MP!", "#0ea5e9"); return; }
+    setStats(prev => ({ ...prev, mp: prev.mp - skill.mpCost }));
+    setSkillCooldowns(prev => ({ ...prev, [skill.id]: Date.now() + skill.cooldown }));
+    const isCrit = Math.random() < 0.15;
+    const baseDmg = totalAtk * skill.damageMultiplier;
+    const variance = 0.85 + Math.random() * 0.3;
+    const dmg = Math.floor(baseDmg * variance * (isCrit ? 2.2 : 1));
+    addDamagePop(dmg, isCrit ? '#f59e0b' : skill.color, isCrit, skill.id !== 'normal');
+    setCurrentMob(prev => {
+      if (!prev) return null;
+      const newHp = prev.curHp - dmg;
+      if (newHp <= 0) { handleMobDefeat(prev); return null; }
+      return { ...prev, curHp: newHp };
+    });
+    if (Math.random() < 0.35) mobAttack();
+  }, [currentMob, isStunned, skillCooldowns, stats.mp, totalAtk, handleMobDefeat, mobAttack]);
 
-  const handleSave = () => {
-    setSaveStatus('saving');
-    setTimeout(() => {
-      if (tg) {
-        tg.sendData(JSON.stringify(stats));
-      } else {
-        console.log("Saving progress to simulated server:", stats);
-      }
-      setSaveStatus('saved');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-    }, 800);
+  const toggleEquip = (itemId: string) => {
+    setStats(prev => {
+      const itemToEquip = prev.inventory.find(i => i.id === itemId);
+      if (!itemToEquip) return prev;
+      const isEquipping = !itemToEquip.isEquipped;
+      const newInventory = prev.inventory.map(item => {
+        if (item.id === itemId) return { ...item, isEquipped: isEquipping };
+        if (isEquipping && item.isEquipped && item.type === itemToEquip.type) return { ...item, isEquipped: false };
+        return item;
+      });
+      return { ...prev, inventory: newInventory };
+    });
   };
 
+  const sellItemNPC = (itemId: string) => {
+    const item = stats.inventory.find(i => i.id === itemId);
+    if (!item) return;
+    const price = Math.floor((item.lvl * 50) * ITEM_RESALE_MULTIPLIERS[item.rarity]);
+    setStats(prev => ({ ...prev, gold: prev.gold + price, inventory: prev.inventory.filter(i => i.id !== itemId) }));
+  };
+
+  const listInMarket = (itemId: string) => {
+    const item = stats.inventory.find(i => i.id === itemId);
+    if (!item) return;
+    const priceInput = prompt(`${item.name} kaça satılsın? (Pazar)`, "1000");
+    const price = parseInt(priceInput || "0");
+    if (isNaN(price) || price <= 0) return;
+
+    const newListing: MarketListing = {
+      id: Math.random().toString(36).substr(2, 9),
+      item: { ...item, isEquipped: false },
+      sellerName: tg?.initDataUnsafe?.user?.first_name || "Gezgin",
+      price,
+      date: Date.now()
+    };
+    
+    setGlobalMarket(prev => [...prev, newListing]);
+    setStats(prev => ({ ...prev, inventory: prev.inventory.filter(i => i.id !== itemId) }));
+    alert("Ürün küresel pazara eklendi!");
+  };
+
+  const enterDungeon = (dungeon: DungeonTemplate) => {
+    if (stats.lvl < dungeon.minLvl || stats.gold < dungeon.entryFee) return;
+    setStats(prev => ({ ...prev, gold: prev.gold - dungeon.entryFee }));
+    setActiveDungeon({ template: dungeon, currentWave: 1 });
+    setCurrentMob(null); setShowDungeons(false);
+  };
+
+  const filteredMarket = useMemo(() => {
+    if (marketFilter === 'ALL') return globalMarket;
+    return globalMarket.filter(l => l.item.type === marketFilter);
+  }, [globalMarket, marketFilter]);
+
+  const anyOverlay = showInventory || showMarket || showDungeons || showGlobalPazar || showPremiumShop;
+
   return (
-    <div className="flex flex-col h-screen select-none overflow-hidden bg-slate-950 font-sans">
-      <StatusBar stats={stats} />
+    <div className="flex flex-col h-screen select-none overflow-hidden bg-[#020617] font-sans">
+      <StatusBar stats={{...stats, maxHp: totalMaxHp}} totalAtk={totalAtk} totalDef={totalDef} />
       
-      {showLevelUp && (
-        <div className="absolute top-1/4 left-0 w-full z-50 flex flex-col items-center animate-bounce pointer-events-none">
-          <h2 className="text-4xl font-black text-amber-400 perspective-text italic uppercase tracking-widest drop-shadow-[0_0_20px_rgba(251,191,36,0.8)] levelup-animate text-center">
-            LEVEL UP!
-          </h2>
-          <p className="text-amber-200 text-sm font-bold bg-amber-950/90 px-6 py-2 rounded-full border border-amber-500/50 shadow-2xl backdrop-blur-md">
-            GÜCÜN VE SAVUNMAN ARTTI!
-          </p>
+      {/* Drop Notification Screen */}
+      {lastDrop && (
+        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
+           <div className="bg-slate-900 border-2 border-amber-500 p-8 rounded-3xl shadow-[0_0_80px_rgba(245,158,11,0.4)] flex flex-col items-center gap-4 scale-up-center">
+              <span className="text-6xl animate-bounce">✨</span>
+              <h3 className="text-amber-500 font-black text-xs uppercase tracking-[0.3em]">Yeni Eşya Kazanıldı!</h3>
+              <p className="text-2xl font-black italic" style={{color: RARITY_COLORS[lastDrop.rarity]}}>{lastDrop.name}</p>
+              <div className="flex gap-4 mt-2">
+                 <div className="text-[10px] bg-slate-800 px-3 py-1 rounded-full text-slate-400 font-bold uppercase tracking-widest">{lastDrop.type}</div>
+                 <div className="text-[10px] bg-slate-800 px-3 py-1 rounded-full text-slate-400 font-bold uppercase tracking-widest">LV. {lastDrop.lvl}</div>
+              </div>
+              <button onClick={() => setLastDrop(null)} className="mt-6 w-full bg-amber-600 text-slate-950 font-black py-4 rounded-xl shadow-lg active:scale-95 transition-transform uppercase tracking-widest">Çantaya Koy</button>
+           </div>
         </div>
       )}
 
-      <div className="px-4 py-2 bg-slate-900/60 border-b border-amber-900/20 text-center relative z-10 backdrop-blur-md">
-        <p className="text-[9px] text-amber-500/70 uppercase font-black tracking-[0.3em] mb-1">Kahinin Fısıltısı</p>
-        <p className="text-xs italic text-slate-200 leading-relaxed font-serif">"{oracleMsg}"</p>
-      </div>
-
-      <main className={`flex-1 flex flex-col items-center justify-center relative p-6 transition-all duration-300 ${isHurt ? 'bg-red-950/30' : ''}`}>
-        <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
-           <div className="w-full h-full bg-[url('https://picsum.photos/seed/sro-land/800/1200')] bg-cover bg-center grayscale contrast-125 mix-blend-screen" />
-           <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-transparent to-slate-950/90" />
-        </div>
-
+      {/* Main Game Screen */}
+      <main className={`flex-1 flex flex-col items-center justify-center relative p-6 transition-all duration-300 ${isHurt ? 'hit-shake bg-red-950/20' : ''} ${anyOverlay ? 'hidden' : 'flex'}`}>
         {currentMob ? (
-          <div className="relative z-10 flex flex-col items-center gap-8 w-full max-w-xs">
-            <div className="text-center w-full">
-              <div className="inline-block px-3 py-0.5 rounded-t-lg bg-amber-900/40 border-t border-x border-amber-500/20 text-[10px] font-bold text-amber-400 uppercase">
-                Vahşi Yaratık
-              </div>
-              <div className="bg-slate-900/90 border border-amber-900/40 p-3 rounded-xl shadow-2xl backdrop-blur-sm">
-                <h2 className="text-lg font-black text-amber-100 tracking-wider uppercase mb-2">
-                  Lv{currentMob.lvl} {currentMob.name}
-                </h2>
-                <div className="h-2 w-full bg-slate-800 rounded-full border border-slate-700 p-0.5 overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-orange-600 to-orange-400 transition-all duration-300 rounded-full shadow-[0_0_8px_rgba(249,115,22,0.4)]"
-                    style={{ width: `${(currentMob.curHp / currentMob.hp) * 100}%` }}
-                  />
-                </div>
-                <div className="mt-1 text-[9px] text-slate-500 font-mono flex justify-between px-1">
-                   <span>HP: {Math.max(0, Math.floor(currentMob.curHp))}</span>
-                   <span>{Math.floor((currentMob.curHp / currentMob.hp) * 100)}%</span>
-                </div>
+          <div className="relative z-10 flex flex-col items-center gap-4 w-full max-w-xs">
+            <div className={`bg-slate-900/95 border-2 p-2 rounded shadow-2xl w-full text-center transition-colors ${currentMob.isCharging ? 'border-orange-500' : currentMob.isBoss ? 'border-amber-400 bg-amber-950/20' : 'border-amber-900/40'}`}>
+              <h2 className="text-xs font-black text-amber-100 uppercase tracking-widest">{currentMob.isBoss && "[BOSS] "}{currentMob.name} <span className="text-slate-500">(Lv{currentMob.lvl})</span></h2>
+              <div className="h-2 w-full bg-slate-950 rounded mt-1.5 overflow-hidden border border-slate-800">
+                <div className="h-full bg-gradient-to-r from-red-600 to-orange-500 transition-all duration-300" style={{ width: `${(currentMob.curHp/currentMob.hp)*100}%` }} />
               </div>
             </div>
-
-            <div className="relative group perspective-1000" onClick={handleAttack}>
+            <div className="relative h-48 w-full flex items-center justify-center" onClick={() => { if (!isStunned) useSkill(SRO_SKILLS[0]); }}>
               {damagePops.map(pop => (
-                <div
-                  key={pop.id}
-                  className="absolute dmg-float font-black z-50 pointer-events-none"
-                  style={{ 
-                    left: `${pop.x}%`, 
-                    top: `${pop.y}%`, 
-                    color: pop.color,
-                    fontSize: (pop as any).isAbsorb ? '1.2rem' : '2.5rem',
-                    textShadow: '0 0 10px rgba(0,0,0,0.8), 2px 2px 0px black',
-                    transform: pop.color === '#ffffff' ? 'scale(1.5)' : 'scale(1)',
-                    opacity: (pop as any).isAbsorb ? 0.8 : 1
-                  }}
-                >
-                  {(pop as any).textValue ? (pop as any).textValue : pop.value}{(pop as any).isAbsorb ? ' abs' : (pop.color === '#ffffff' ? '!' : '')}
+                <div key={pop.id} className={`absolute dmg-float font-black z-50 text-2xl ${pop.isSkill ? 'scale-125' : ''}`} style={{ left: `${pop.x}%`, top: `${pop.y}%`, color: pop.color, textShadow: '2px 2px 4px black' }}>
+                  {pop.textValue || pop.value.toLocaleString()}
                 </div>
               ))}
-
-              <img 
-                src={currentMob.img} 
-                alt={currentMob.name}
-                className={`w-56 h-56 object-contain transition-transform duration-100 active:scale-90 active:brightness-125 drop-shadow-[0_25px_50px_rgba(0,0,0,0.9)] cursor-pointer ${isHurt ? 'hit-shake' : ''}`}
-              />
-              
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 border-2 border-amber-500/10 rounded-full -z-10 animate-pulse" />
-              <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-40 h-10 bg-black/60 blur-2xl rounded-full -z-20" />
+              <img src={currentMob.img} className={`w-44 h-44 object-contain transition-transform active:scale-90 ${currentMob.isBoss ? 'scale-125 drop-shadow-[0_0_20px_rgba(245,158,11,0.6)]' : ''}`} />
             </div>
-
-            <div className="animate-pulse text-center">
-               <span className="text-[10px] text-slate-500 font-bold tracking-[0.2em]">SALDIRMAK İÇİN DOKUN</span>
+            <div className="grid grid-cols-4 gap-2 w-full mt-2">
+              {SRO_SKILLS.map(skill => {
+                const cd = skillCooldowns[skill.id];
+                const canAfford = stats.mp >= skill.mpCost;
+                return (
+                  <button key={skill.id} onClick={(e) => { e.stopPropagation(); useSkill(skill); }} disabled={!!cd || isStunned}
+                    className={`relative aspect-square rounded border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${cd ? 'border-slate-800 bg-slate-900' : canAfford ? 'border-amber-500/50 bg-slate-900' : 'border-red-900/40 bg-red-950/20'}`}>
+                    <span className="text-xl mb-1">{skill.icon}</span>
+                    <span className="text-[7px] font-black text-amber-400 uppercase truncate w-full px-1">{skill.name}</span>
+                    {cd && <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-[10px] font-black text-white">{( (cd - Date.now())/1000 ).toFixed(1)}s</div>}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-4 mt-2">
+              <button onClick={() => usePotion('hp')} className="relative w-12 h-12 bg-red-900/40 border-2 border-red-600 rounded flex items-center justify-center text-xl shadow-lg active:scale-90 transition-transform">🧪<span className="absolute -top-1 -right-1 bg-red-600 text-[9px] font-black px-1.5 rounded-full border border-slate-950">{stats.potions.hp}</span></button>
+              <button onClick={() => usePotion('mp')} className="relative w-12 h-12 bg-sky-900/40 border-2 border-sky-600 rounded flex items-center justify-center text-xl shadow-lg active:scale-90 transition-transform">🧪<span className="absolute -top-1 -right-1 bg-sky-600 text-[9px] font-black px-1.5 rounded-full border border-slate-950">{stats.potions.mp}</span></button>
             </div>
           </div>
-        ) : (
-          <div className="flex flex-col items-center">
-             <div className="w-24 h-24 border-4 border-slate-800 border-t-amber-600 rounded-full animate-spin mb-4" />
-             <span className="text-amber-500 font-bold uppercase tracking-widest text-xs">Yaratık Beliriyor...</span>
-          </div>
-        )}
-
-        {stats.hp <= 0 && (
-          <div className="absolute inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500 backdrop-blur-xl">
-             <div className="mb-6 w-20 h-20 bg-red-950/50 rounded-full border-4 border-red-900 flex items-center justify-center text-3xl">💀</div>
-             <h1 className="text-6xl font-black text-red-600 mb-2 tracking-tighter uppercase italic drop-shadow-lg">Yenildin</h1>
-             <p className="text-slate-400 mb-10 max-w-[280px] leading-relaxed">Gücün tükendi. Jang'an'ın güvenli surlarına geri dönüp iyileşmelisin.</p>
-             <button 
-                onClick={() => setStats(prev => ({...prev, hp: prev.maxHp}))}
-                className="w-full bg-gradient-to-r from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white font-black py-5 rounded-2xl shadow-[0_10px_40px_rgba(153,27,27,0.4)] border-b-4 border-red-900 active:translate-y-1 transition-all"
-             >
-                KENT MERKEZİNDE CANLAN
-             </button>
-          </div>
-        )}
+        ) : <div className="text-amber-500 animate-pulse font-bold tracking-widest text-xs uppercase">Bölge Aranıyor...</div>}
       </main>
 
-      <footer className="p-4 bg-slate-900/90 border-t border-slate-800/50 backdrop-blur-lg flex items-center justify-between gap-4 relative z-20">
-        <div className="flex flex-col gap-1 min-w-[70px]">
-          <span className="text-[9px] text-slate-500 uppercase font-black tracking-widest">Karakter</span>
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-amber-100 flex items-center gap-1">
-              ⚔️ {stats.atk} <span className="text-[8px] text-slate-500 uppercase font-black">Atk</span>
-            </span>
-            <span className="text-xs font-bold text-sky-300 flex items-center gap-1">
-              🛡️ {stats.def} <span className="text-[8px] text-slate-500 uppercase font-black">Def</span>
-            </span>
+      {/* INVENTORY OVERLAY */}
+      {showInventory && (
+          <div className="absolute inset-0 z-[100] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-6 border-b border-amber-900/40 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase tracking-widest italic">Inventory</h2>
+              <button onClick={() => setShowInventory(false)} className="text-slate-500 text-2xl">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              {stats.inventory.length === 0 ? <div className="text-slate-600 text-center py-20 italic">Çanta boş.</div> : stats.inventory.map(item => {
+                const sellPrice = Math.floor((item.lvl * 50) * ITEM_RESALE_MULTIPLIERS[item.rarity]);
+                return (
+                  <div key={item.id} className={`bg-[#0f172a] border-2 p-3 rounded flex flex-col gap-2 transition-all ${item.isEquipped ? 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-800'}`}>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-slate-950 border border-slate-700 rounded flex items-center justify-center text-2xl" style={{borderColor: RARITY_COLORS[item.rarity] + '60', color: RARITY_COLORS[item.rarity]}}>
+                          {item.type === 'WEAPON' ? '⚔️' : item.type === 'ACCESSORY' ? '💍' : '🛡️'}
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-tight" style={{color: RARITY_COLORS[item.rarity]}}>{item.name}</p>
+                          <p className="text-[8px] text-slate-500 font-bold uppercase">LV. {item.lvl} | {item.type}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-0.5 font-mono">
+                        {item.atkBonus > 0 && <span className="text-[9px] text-amber-500 font-black">+{item.atkBonus} ATK</span>}
+                        {item.defBonus > 0 && <span className="text-[9px] text-sky-500 font-black">+{item.defBonus} DEF</span>}
+                        {item.hpBonus > 0 && <span className="text-[9px] text-red-500 font-black">+{item.hpBonus} HP</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      <button onClick={() => toggleEquip(item.id)} className={`flex-1 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all ${item.isEquipped ? 'bg-amber-600 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>{item.isEquipped ? 'Unequip' : 'Equip'}</button>
+                      <button onClick={() => listInMarket(item.id)} className="px-3 bg-indigo-900/30 border border-indigo-500/50 text-indigo-400 py-1.5 rounded text-[9px] font-black uppercase">Pazara Koy</button>
+                      <button onClick={() => sellItemNPC(item.id)} className="px-3 bg-red-900/20 border border-red-900/40 text-red-600 py-1.5 rounded text-[9px] font-black uppercase">NPC ({sellPrice}G)</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={() => setShowInventory(false)} className="mt-4 bg-slate-800 py-4 rounded-xl text-xs font-black uppercase text-slate-300">Kapat</button>
           </div>
-        </div>
-        
-        <button 
-          onClick={handleSave}
-          disabled={saveStatus !== 'idle'}
-          className={`flex-[2] text-white font-black py-4 rounded-xl shadow-xl flex items-center justify-center gap-3 border transition-all active:scale-[0.98] ${
-            saveStatus === 'saved' 
-              ? 'bg-blue-600 border-blue-400' 
-              : 'bg-gradient-to-b from-emerald-600 to-emerald-800 border-emerald-500/30'
-          }`}
-        >
-          {saveStatus === 'idle' && (
-            <>
-              <svg className="w-5 h-5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              OTURUMU KAYDET
-            </>
-          )}
-          {saveStatus === 'saving' && <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-          {saveStatus === 'saved' && <span>KAYDEDİLDİ! ✓</span>}
-        </button>
+      )}
 
-        <div className="w-14 h-14 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700 shadow-inner group active:bg-slate-700 transition-colors">
-           <span className="text-2xl filter drop-shadow-md">⚔️</span>
+      {/* MARKET OVERLAY */}
+      {showGlobalPazar && (
+          <div className="absolute inset-0 z-[100] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-6 border-b border-amber-900/40 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase tracking-widest italic">Global Pazar</h2>
+              <button onClick={() => setShowGlobalPazar(false)} className="text-slate-500 text-2xl">✕</button>
+            </div>
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
+               {['ALL', 'WEAPON', 'ARMOR', 'SHIELD', 'HELMET', 'ACCESSORY'].map(f => (
+                  <button key={f} onClick={() => setMarketFilter(f as any)} className={`px-3 py-1.5 rounded text-[8px] font-black whitespace-nowrap transition-colors border ${marketFilter === f ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
+                    {f}
+                  </button>
+               ))}
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+              {filteredMarket.length === 0 ? <div className="text-slate-600 text-center py-20 italic">Eşya bulunamadı.</div> : filteredMarket.map(listing => (
+                  <div key={listing.id} className="bg-[#0f172a] border-2 border-slate-800 p-3 rounded flex flex-col gap-2 transition-all">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-3">
+                         <div className="w-12 h-12 bg-slate-950 border border-slate-700 rounded flex items-center justify-center text-2xl" style={{borderColor: RARITY_COLORS[listing.item.rarity] + '60', color: RARITY_COLORS[listing.item.rarity]}}>
+                           {listing.item.type === 'WEAPON' ? '⚔️' : listing.item.type === 'ACCESSORY' ? '💍' : '🛡️'}
+                         </div>
+                         <div><p className="text-[11px] font-black uppercase tracking-tight" style={{color: RARITY_COLORS[listing.item.rarity]}}>{listing.item.name}</p><p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Satıcı: {listing.sellerName}</p></div>
+                      </div>
+                      <div className="flex flex-col items-end"><span className="text-[8px] font-black text-amber-500/60 uppercase">Fiyat</span><span className="text-sm font-black text-amber-400 leading-none">💰 {listing.price.toLocaleString()}</span></div>
+                    </div>
+                    <button onClick={() => {
+                        if (stats.gold >= listing.price) {
+                           setStats(prev => ({...prev, gold: prev.gold - listing.price, inventory: [...prev.inventory, listing.item]}));
+                           setGlobalMarket(prev => prev.filter(l => l.id !== listing.id));
+                           alert("Satın alındı!");
+                        } else alert("Altın yetersiz!");
+                    }} className="w-full mt-1 bg-amber-600 text-slate-950 py-2 rounded text-[10px] font-black uppercase tracking-widest active:scale-95">Satın Al</button>
+                  </div>
+              ))}
+            </div>
+            <button onClick={() => setShowGlobalPazar(false)} className="mt-4 bg-slate-800 py-4 rounded-xl text-xs font-black uppercase text-slate-300">Geri Dön</button>
+          </div>
+      )}
+
+      {/* PREMIUM SHOP */}
+      {showPremiumShop && (
+        <div className="absolute inset-0 z-[150] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
+           <div className="flex justify-between items-center mb-6 border-b border-amber-500 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase italic tracking-widest">Premium Shop</h2>
+              <button onClick={() => setShowPremiumShop(false)} className="text-slate-500 text-2xl">✕</button>
+            </div>
+            <div className="space-y-6 overflow-y-auto">
+               <div className="bg-gradient-to-br from-amber-900/40 to-slate-900 border-2 border-amber-500 p-4 rounded-xl shadow-2xl">
+                  <div className="flex justify-between items-start mb-2"><span className="bg-amber-500 text-black text-[10px] font-black px-2 py-0.5 rounded uppercase">Bestseller</span><span className="text-amber-500 font-black text-sm">⭐ 250 Stars</span></div>
+                  <h3 className="text-lg font-black text-white">VIP ÜYELİK (KALICI)</h3>
+                  <ul className="mt-2 space-y-1 text-[10px] text-amber-200 font-bold uppercase"><li>✓ 2x XP Kazancı</li><li>✓ 2x GOLD Kazancı</li><li>✓ AUTO-POTION Özelliği</li></ul>
+                  <button onClick={() => { setStats(prev => ({ ...prev, isPremium: true, autoPotionEnabled: true })); setShowPremiumShop(false); }} className="w-full mt-4 bg-amber-500 text-black py-3 rounded-lg font-black uppercase tracking-widest shadow-xl">SATIN AL</button>
+               </div>
+            </div>
+            <button onClick={() => setShowPremiumShop(false)} className="mt-auto bg-slate-800 py-4 rounded-xl text-xs font-black uppercase text-slate-300">Geri</button>
         </div>
+      )}
+
+      {/* FOOTER CONTROLS */}
+      <footer className="p-4 bg-[#0f172a] border-t-2 border-amber-900/30 grid grid-cols-6 gap-1 relative z-[90]">
+        <button onClick={() => setShowMarket(true)} className="aspect-square bg-slate-800/80 rounded border border-slate-700/50 flex flex-col items-center justify-center shadow-xl active:bg-slate-700"><span className="text-lg">🏪</span><span className="text-[6px] font-black text-slate-400 mt-1 uppercase">NPC</span></button>
+        <button onClick={() => setShowDungeons(true)} className="aspect-square bg-slate-800/80 rounded border border-slate-700/50 flex flex-col items-center justify-center shadow-xl active:bg-slate-700"><span className="text-lg">🏰</span><span className="text-[6px] font-black text-slate-400 mt-1 uppercase">DNG</span></button>
+        <button onClick={() => setShowPremiumShop(true)} className="col-span-2 bg-gradient-to-b from-amber-400 to-amber-600 text-black font-black rounded shadow-[0_0_15px_rgba(251,191,36,0.3)] active:translate-y-1 transition-all uppercase tracking-widest text-[10px] border-b-4 border-amber-800 flex items-center justify-center gap-1">⭐ PREMIUM</button>
+        <button onClick={() => setShowGlobalPazar(true)} className="aspect-square bg-indigo-900/40 rounded border border-indigo-500/30 flex flex-col items-center justify-center shadow-xl active:bg-indigo-800/60"><span className="text-lg">⚖️</span><span className="text-[6px] font-black text-indigo-300 mt-1 uppercase">PAZAR</span></button>
+        <button onClick={() => setShowInventory(true)} className="aspect-square bg-slate-800/80 rounded border border-slate-700/50 flex flex-col items-center justify-center shadow-xl active:bg-slate-700"><span className="text-lg">🎒</span><span className="text-[6px] font-black text-slate-400 mt-1 uppercase">BAG</span></button>
       </footer>
     </div>
   );

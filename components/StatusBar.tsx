@@ -5,88 +5,74 @@ import { getXpRequired } from '../constants';
 
 interface StatusBarProps {
   stats: PlayerStats;
+  totalAtk: number;
+  totalDef: number;
 }
 
-export const StatusBar: React.FC<StatusBarProps> = ({ stats }) => {
+export const StatusBar: React.FC<StatusBarProps> = ({ stats, totalAtk, totalDef }) => {
   const xpRequired = useMemo(() => getXpRequired(stats.lvl), [stats.lvl]);
   const hpPercent = (stats.hp / stats.maxHp) * 100;
+  const mpPercent = (stats.mp / stats.maxMp) * 100;
   const xpPercent = (stats.xp / xpRequired) * 100;
 
-  // Visual logic for XP bar
   const isNearLevelUp = xpPercent >= 80;
-  const isVeryClose = xpPercent >= 95;
 
   return (
-    <div className="w-full bg-slate-900 border-b border-amber-900/40 p-3 pt-4 flex flex-col gap-3 shadow-[0_4px_20px_rgba(0,0,0,0.5)] relative z-30">
+    <div className="w-full bg-[#0f172a] border-b-2 border-amber-900/60 p-3 pt-4 flex flex-col gap-2 shadow-[0_4px_30px_rgba(0,0,0,0.8)] relative z-50">
       <div className="flex justify-between items-center px-1">
         <div className="flex items-center gap-2.5">
-          <div className="bg-amber-600 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded shadow-[0_0_10px_rgba(217,119,6,0.4)]">
+          <div className="bg-gradient-to-br from-amber-400 to-amber-700 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded shadow-[0_0_10px_rgba(217,119,6,0.4)] border border-amber-300/30">
             LVL {stats.lvl}
           </div>
-          <span className="text-slate-200 text-xs font-bold tracking-wide">SAVAŞÇI</span>
+          <span className="text-amber-100 text-xs font-black tracking-widest italic">SAVAŞÇI</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-amber-500 text-[10px] font-black tracking-tight">💰 {stats.gold.toLocaleString()}</span>
-          <span className="text-slate-500 text-[9px] font-bold uppercase">Altın</span>
+        <div className="flex items-center gap-3">
+          <div className="flex flex-col items-end">
+             <span className="text-[9px] font-black text-amber-500/80 leading-none">GOLD</span>
+             <span className="text-amber-400 text-xs font-black tracking-tighter">💰 {stats.gold.toLocaleString()}</span>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {/* Health Bar */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-[9px] font-black px-1">
-            <span className="text-red-500 uppercase tracking-tighter">Sağlık</span>
-            <span className="text-slate-300 font-mono">{Math.round(stats.hp)}</span>
-          </div>
-          <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800 shadow-inner">
+      <div className="grid grid-cols-12 gap-2 items-center">
+        {/* HP/MP bars */}
+        <div className="col-span-8 space-y-1.5">
+          <div className="h-3 w-full bg-black rounded border border-slate-800 relative overflow-hidden">
             <div 
-              className="h-full bg-gradient-to-r from-red-700 to-red-500 transition-all duration-500 ease-out shadow-[0_0_8px_rgba(239,68,68,0.3)]"
+              className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all duration-300"
               style={{ width: `${Math.max(0, hpPercent)}%` }}
             />
+            <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-white perspective-text">HP {Math.round(stats.hp)} / {Math.round(stats.maxHp)}</span>
+          </div>
+          <div className="h-3 w-full bg-black rounded border border-slate-800 relative overflow-hidden">
+            <div 
+              className="h-full bg-gradient-to-r from-sky-800 to-sky-500 transition-all duration-300"
+              style={{ width: `${Math.max(0, mpPercent)}%` }}
+            />
+            <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-white perspective-text">MP {Math.round(stats.mp)} / {Math.round(stats.maxMp)}</span>
           </div>
         </div>
 
-        {/* XP Bar */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-[9px] font-black px-1">
-            <span className={`uppercase tracking-tighter transition-colors duration-300 ${isNearLevelUp ? 'text-cyan-400 animate-pulse' : 'text-emerald-500'}`}>
-              Tecrübe {isVeryClose ? '!!' : ''}
-            </span>
-            <span className="text-slate-300 font-mono">{Math.round(xpPercent)}%</span>
+        {/* ATK/DEF display */}
+        <div className="col-span-4 flex flex-col gap-1 bg-black/40 border border-slate-800 rounded p-1">
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[7px] font-black text-amber-500">ATK</span>
+            <span className="text-[9px] font-bold text-white leading-none">{totalAtk}</span>
           </div>
-          <div className="h-2 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800 shadow-inner relative">
-            {/* Base Progress Bar */}
-            <div 
-              className={`h-full transition-all duration-700 ease-out relative z-10 ${
-                isNearLevelUp 
-                  ? 'bg-gradient-to-r from-cyan-600 to-emerald-400' 
-                  : 'bg-gradient-to-r from-emerald-700 to-emerald-400'
-              }`}
-              style={{ width: `${Math.min(100, xpPercent)}%` }}
-            >
-              {/* Shine effect for near level up */}
-              {isNearLevelUp && (
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-[shimmer_2s_infinite] pointer-events-none" />
-              )}
-            </div>
-            
-            {/* Outer Glow when near level up */}
-            {isNearLevelUp && (
-              <div 
-                className="absolute inset-0 bg-cyan-500/20 blur-[2px] animate-pulse"
-                style={{ width: `${Math.min(100, xpPercent)}%` }}
-              />
-            )}
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[7px] font-black text-sky-500">DEF</span>
+            <span className="text-[9px] font-bold text-white leading-none">{totalDef}</span>
           </div>
         </div>
       </div>
 
-      <style>{`
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      `}</style>
+      {/* XP Bar footer */}
+      <div className="w-full h-1.5 bg-black rounded-full overflow-hidden border border-slate-900 mt-1">
+        <div 
+          className={`h-full transition-all duration-1000 ${isNearLevelUp ? 'bg-cyan-400 animate-pulse' : 'bg-emerald-600'}`}
+          style={{ width: `${Math.min(100, xpPercent)}%` }}
+        />
+      </div>
     </div>
   );
 };
