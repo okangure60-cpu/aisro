@@ -1,0 +1,7 @@
+{
+  "name": "Silkroad Online Mini-Sim",
+  "description": "A high-fidelity Silkroad Online inspired MMORPG simulation for Telegram Mini Apps, featuring active combat, leveling systems, and dynamic mob generation.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
