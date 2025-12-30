@@ -4,8 +4,10 @@ import { StatusBar } from './components/StatusBar';
 import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, ItemType, Skill, PlayerDebuff, MobAbilityType, DungeonTemplate, MarketListing } from './types';
 import { SRO_MOBS, SRO_SKILLS, SRO_DUNGEONS, getXpRequired, RARITY_COLORS, POTION_CONFIG, ITEM_RESALE_MULTIPLIERS } from './constants';
 
-const STORAGE_KEY = 'sro_legend_journey_stats_v4_final';
-const MARKET_STORAGE_KEY = 'sro_global_pazar_listings_v4';
+const STORAGE_KEY = 'sro_legend_journey_stats_v5_prod';
+const MARKET_STORAGE_KEY = 'sro_global_pazar_listings_v5';
+
+type ActiveTab = 'GAME' | 'BAG' | 'NPC' | 'DNG' | 'MARKET' | 'VIP';
 
 const App: React.FC = () => {
   const [stats, setStats] = useState<PlayerStats>(() => {
@@ -31,16 +33,12 @@ const App: React.FC = () => {
     return [];
   });
 
+  const [activeTab, setActiveTab] = useState<ActiveTab>('GAME');
   const [currentMob, setCurrentMob] = useState<ActiveMob | null>(null);
   const [damagePops, setDamagePops] = useState<DamagePop[]>([]);
   const [isHurt, setIsHurt] = useState(false);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [lastDrop, setLastDrop] = useState<Item | null>(null);
-  const [showInventory, setShowInventory] = useState(false);
-  const [showMarket, setShowMarket] = useState(false);
-  const [showDungeons, setShowDungeons] = useState(false);
-  const [showGlobalPazar, setShowGlobalPazar] = useState(false);
-  const [showPremiumShop, setShowPremiumShop] = useState(false);
   const [marketFilter, setMarketFilter] = useState<ItemType | 'ALL'>('ALL');
   
   const [activeDungeon, setActiveDungeon] = useState<{ template: DungeonTemplate, currentWave: number } | null>(null);
@@ -53,7 +51,6 @@ const App: React.FC = () => {
 
   const tg = window.Telegram?.WebApp;
 
-  // Persist Market and Stats
   useEffect(() => {
     localStorage.setItem(MARKET_STORAGE_KEY, JSON.stringify(globalMarket));
   }, [globalMarket]);
@@ -74,7 +71,6 @@ const App: React.FC = () => {
 
   const isStunned = useMemo(() => activeDebuffs.some(d => d.type === 'STUN' && d.endTime > Date.now()), [activeDebuffs]);
 
-  // Game Logic Loops
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
@@ -151,12 +147,11 @@ const App: React.FC = () => {
     const goldReward = mob.goldReward * multiplier;
 
     let droppedItem: Item | null = null;
-    const isDungeonDrop = activeDungeon && mob.isBoss;
-    const dropChance = isDungeonDrop ? 1.0 : 0.15; 
+    const dropChance = activeDungeon && mob.isBoss ? 1.0 : 0.15; 
 
     if (Math.random() < dropChance) {
       const types: ItemType[] = ['WEAPON', 'SHIELD', 'ARMOR', 'HELMET', 'ACCESSORY'];
-      const rarities: ItemRarity[] = isDungeonDrop && Math.random() < activeDungeon.template.specialDropRate ? ['MOON', 'SUN'] : ['COMMON', 'STAR', 'MOON'];
+      const rarities: ItemRarity[] = (activeDungeon && mob.isBoss && Math.random() < activeDungeon.template.specialDropRate) ? ['MOON', 'SUN'] : ['COMMON', 'STAR', 'MOON'];
       const randType = types[Math.floor(Math.random() * types.length)];
       const randRarity = rarities[Math.floor(Math.random() * rarities.length)] as ItemRarity;
       
@@ -168,7 +163,7 @@ const App: React.FC = () => {
         name: `${randRarity} ${finalName}`,
         type: randType, rarity: randRarity, lvl: mob.lvl,
         atkBonus: randType === 'WEAPON' ? mob.lvl * (randRarity === 'SUN' ? 15 : 6) : 0,
-        defBonus: (randType !== 'WEAPON' && randType !== 'ACCESSORY') ? mob.lvl * (randRarity === 'SUN' ? 10 : 4) : (randType === 'ACCESSORY' ? 0 : 0),
+        defBonus: (randType !== 'WEAPON' && randType !== 'ACCESSORY') ? mob.lvl * (randRarity === 'SUN' ? 10 : 4) : 0,
         hpBonus: mob.lvl * (randRarity === 'SUN' ? 150 : 35) + (randType === 'ACCESSORY' ? mob.lvl * 50 : 0),
         isEquipped: false
       };
@@ -280,10 +275,23 @@ const App: React.FC = () => {
   };
 
   const enterDungeon = (dungeon: DungeonTemplate) => {
-    if (stats.lvl < dungeon.minLvl || stats.gold < dungeon.entryFee) return;
+    if (stats.lvl < dungeon.minLvl || stats.gold < dungeon.entryFee) {
+      alert("Seviye veya altın yetersiz!");
+      return;
+    }
     setStats(prev => ({ ...prev, gold: prev.gold - dungeon.entryFee }));
     setActiveDungeon({ template: dungeon, currentWave: 1 });
-    setCurrentMob(null); setShowDungeons(false);
+    setCurrentMob(null); 
+    setActiveTab('GAME');
+  };
+
+  const buyPremium = () => {
+    const confirmed = confirm("250 Stars ile VIP Üyelik satın alınsın mı? (2x XP/Gold ve Oto-Pot)");
+    if (confirmed) {
+      setStats(prev => ({ ...prev, isPremium: true, autoPotionEnabled: true }));
+      alert("Tebrikler! VIP Statüsü aktif edildi.");
+      setActiveTab('GAME');
+    }
   };
 
   const filteredMarket = useMemo(() => {
@@ -291,30 +299,24 @@ const App: React.FC = () => {
     return globalMarket.filter(l => l.item.type === marketFilter);
   }, [globalMarket, marketFilter]);
 
-  const anyOverlay = showInventory || showMarket || showDungeons || showGlobalPazar || showPremiumShop;
-
   return (
     <div className="flex flex-col h-screen select-none overflow-hidden bg-[#020617] font-sans">
       <StatusBar stats={{...stats, maxHp: totalMaxHp}} totalAtk={totalAtk} totalDef={totalDef} />
       
-      {/* Drop Notification Screen */}
+      {/* Drop Notification */}
       {lastDrop && (
-        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
            <div className="bg-slate-900 border-2 border-amber-500 p-8 rounded-3xl shadow-[0_0_80px_rgba(245,158,11,0.4)] flex flex-col items-center gap-4 scale-up-center">
               <span className="text-6xl animate-bounce">✨</span>
-              <h3 className="text-amber-500 font-black text-xs uppercase tracking-[0.3em]">Yeni Eşya Kazanıldı!</h3>
+              <h3 className="text-amber-500 font-black text-xs uppercase tracking-[0.3em]">Yeni Eşya!</h3>
               <p className="text-2xl font-black italic" style={{color: RARITY_COLORS[lastDrop.rarity]}}>{lastDrop.name}</p>
-              <div className="flex gap-4 mt-2">
-                 <div className="text-[10px] bg-slate-800 px-3 py-1 rounded-full text-slate-400 font-bold uppercase tracking-widest">{lastDrop.type}</div>
-                 <div className="text-[10px] bg-slate-800 px-3 py-1 rounded-full text-slate-400 font-bold uppercase tracking-widest">LV. {lastDrop.lvl}</div>
-              </div>
-              <button onClick={() => setLastDrop(null)} className="mt-6 w-full bg-amber-600 text-slate-950 font-black py-4 rounded-xl shadow-lg active:scale-95 transition-transform uppercase tracking-widest">Çantaya Koy</button>
+              <button onClick={() => setLastDrop(null)} className="mt-6 w-full bg-amber-600 text-slate-950 font-black py-4 rounded-xl uppercase tracking-widest">Tamam</button>
            </div>
         </div>
       )}
 
       {/* Main Game Screen */}
-      <main className={`flex-1 flex flex-col items-center justify-center relative p-6 transition-all duration-300 ${isHurt ? 'hit-shake bg-red-950/20' : ''} ${anyOverlay ? 'hidden' : 'flex'}`}>
+      <main className={`flex-1 flex flex-col items-center justify-center relative p-6 transition-all duration-300 ${isHurt ? 'hit-shake bg-red-950/20' : ''} ${activeTab !== 'GAME' ? 'hidden' : 'flex'}`}>
         {currentMob ? (
           <div className="relative z-10 flex flex-col items-center gap-4 w-full max-w-xs">
             <div className={`bg-slate-900/95 border-2 p-2 rounded shadow-2xl w-full text-center transition-colors ${currentMob.isCharging ? 'border-orange-500' : currentMob.isBoss ? 'border-amber-400 bg-amber-950/20' : 'border-amber-900/40'}`}>
@@ -339,127 +341,158 @@ const App: React.FC = () => {
                   <button key={skill.id} onClick={(e) => { e.stopPropagation(); useSkill(skill); }} disabled={!!cd || isStunned}
                     className={`relative aspect-square rounded border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${cd ? 'border-slate-800 bg-slate-900' : canAfford ? 'border-amber-500/50 bg-slate-900' : 'border-red-900/40 bg-red-950/20'}`}>
                     <span className="text-xl mb-1">{skill.icon}</span>
-                    <span className="text-[7px] font-black text-amber-400 uppercase truncate w-full px-1">{skill.name}</span>
+                    <span className="text-[7px] font-black text-amber-400 uppercase truncate px-1">{skill.name}</span>
                     {cd && <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-[10px] font-black text-white">{( (cd - Date.now())/1000 ).toFixed(1)}s</div>}
                   </button>
                 );
               })}
             </div>
-            <div className="flex gap-4 mt-2">
-              <button onClick={() => usePotion('hp')} className="relative w-12 h-12 bg-red-900/40 border-2 border-red-600 rounded flex items-center justify-center text-xl shadow-lg active:scale-90 transition-transform">🧪<span className="absolute -top-1 -right-1 bg-red-600 text-[9px] font-black px-1.5 rounded-full border border-slate-950">{stats.potions.hp}</span></button>
-              <button onClick={() => usePotion('mp')} className="relative w-12 h-12 bg-sky-900/40 border-2 border-sky-600 rounded flex items-center justify-center text-xl shadow-lg active:scale-90 transition-transform">🧪<span className="absolute -top-1 -right-1 bg-sky-600 text-[9px] font-black px-1.5 rounded-full border border-slate-950">{stats.potions.mp}</span></button>
-            </div>
           </div>
-        ) : <div className="text-amber-500 animate-pulse font-bold tracking-widest text-xs uppercase">Bölge Aranıyor...</div>}
+        ) : <div className="text-amber-500 animate-pulse font-bold tracking-widest text-xs uppercase italic">Canavarlar aranıyor...</div>}
       </main>
 
-      {/* INVENTORY OVERLAY */}
-      {showInventory && (
+      {/* OVERLAY TABS */}
+      {activeTab === 'BAG' && (
           <div className="absolute inset-0 z-[100] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
             <div className="flex justify-between items-center mb-6 border-b border-amber-900/40 pb-2">
               <h2 className="text-xl font-black text-amber-500 uppercase tracking-widest italic">Inventory</h2>
-              <button onClick={() => setShowInventory(false)} className="text-slate-500 text-2xl">✕</button>
+              <button onClick={() => setActiveTab('GAME')} className="text-slate-500 text-2xl">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {stats.inventory.length === 0 ? <div className="text-slate-600 text-center py-20 italic">Çanta boş.</div> : stats.inventory.map(item => {
                 const sellPrice = Math.floor((item.lvl * 50) * ITEM_RESALE_MULTIPLIERS[item.rarity]);
                 return (
-                  <div key={item.id} className={`bg-[#0f172a] border-2 p-3 rounded flex flex-col gap-2 transition-all ${item.isEquipped ? 'border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'border-slate-800'}`}>
+                  <div key={item.id} className={`bg-[#0f172a] border-2 p-3 rounded flex flex-col gap-2 ${item.isEquipped ? 'border-amber-500' : 'border-slate-800'}`}>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-slate-950 border border-slate-700 rounded flex items-center justify-center text-2xl" style={{borderColor: RARITY_COLORS[item.rarity] + '60', color: RARITY_COLORS[item.rarity]}}>
+                        <div className="w-10 h-10 bg-slate-950 border border-slate-700 rounded flex items-center justify-center text-xl" style={{borderColor: RARITY_COLORS[item.rarity] + '60', color: RARITY_COLORS[item.rarity]}}>
                           {item.type === 'WEAPON' ? '⚔️' : item.type === 'ACCESSORY' ? '💍' : '🛡️'}
                         </div>
                         <div>
-                          <p className="text-[11px] font-black uppercase tracking-tight" style={{color: RARITY_COLORS[item.rarity]}}>{item.name}</p>
-                          <p className="text-[8px] text-slate-500 font-bold uppercase">LV. {item.lvl} | {item.type}</p>
+                          <p className="text-[10px] font-black uppercase" style={{color: RARITY_COLORS[item.rarity]}}>{item.name}</p>
+                          <p className="text-[8px] text-slate-500">Lv.{item.lvl} {item.type}</p>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-0.5 font-mono">
-                        {item.atkBonus > 0 && <span className="text-[9px] text-amber-500 font-black">+{item.atkBonus} ATK</span>}
-                        {item.defBonus > 0 && <span className="text-[9px] text-sky-500 font-black">+{item.defBonus} DEF</span>}
-                        {item.hpBonus > 0 && <span className="text-[9px] text-red-500 font-black">+{item.hpBonus} HP</span>}
+                      <div className="text-right">
+                        {item.atkBonus > 0 && <p className="text-[8px] text-amber-500">+{item.atkBonus} ATK</p>}
+                        {item.defBonus > 0 && <p className="text-[8px] text-sky-500">+{item.defBonus} DEF</p>}
+                        {item.hpBonus > 0 && <p className="text-[8px] text-red-500">+{item.hpBonus} HP</p>}
                       </div>
                     </div>
-                    <div className="flex gap-2 mt-1">
-                      <button onClick={() => toggleEquip(item.id)} className={`flex-1 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition-all ${item.isEquipped ? 'bg-amber-600 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>{item.isEquipped ? 'Unequip' : 'Equip'}</button>
-                      <button onClick={() => listInMarket(item.id)} className="px-3 bg-indigo-900/30 border border-indigo-500/50 text-indigo-400 py-1.5 rounded text-[9px] font-black uppercase">Pazara Koy</button>
-                      <button onClick={() => sellItemNPC(item.id)} className="px-3 bg-red-900/20 border border-red-900/40 text-red-600 py-1.5 rounded text-[9px] font-black uppercase">NPC ({sellPrice}G)</button>
+                    <div className="flex gap-2">
+                      <button onClick={() => toggleEquip(item.id)} className={`flex-1 py-1.5 rounded text-[9px] font-black uppercase ${item.isEquipped ? 'bg-amber-600 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>{item.isEquipped ? 'UNEQUIP' : 'EQUIP'}</button>
+                      <button onClick={() => listInMarket(item.id)} className="px-3 bg-indigo-900/30 border border-indigo-500/50 text-indigo-400 py-1.5 rounded text-[8px] font-black uppercase">PAZAR</button>
+                      <button onClick={() => sellItemNPC(item.id)} className="px-3 bg-red-900/20 border border-red-900/40 text-red-600 py-1.5 rounded text-[8px] font-black uppercase">NPC ({sellPrice}G)</button>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <button onClick={() => setShowInventory(false)} className="mt-4 bg-slate-800 py-4 rounded-xl text-xs font-black uppercase text-slate-300">Kapat</button>
           </div>
       )}
 
-      {/* MARKET OVERLAY */}
-      {showGlobalPazar && (
+      {activeTab === 'MARKET' && (
           <div className="absolute inset-0 z-[100] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center mb-6 border-b border-amber-900/40 pb-2">
-              <h2 className="text-xl font-black text-amber-500 uppercase tracking-widest italic">Global Pazar</h2>
-              <button onClick={() => setShowGlobalPazar(false)} className="text-slate-500 text-2xl">✕</button>
+            <div className="flex justify-between items-center mb-4 border-b border-amber-900/40 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase italic">Global Pazar</h2>
+              <button onClick={() => setActiveTab('GAME')} className="text-slate-500 text-2xl">✕</button>
             </div>
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 custom-scrollbar no-scrollbar">
-               {['ALL', 'WEAPON', 'ARMOR', 'SHIELD', 'HELMET', 'ACCESSORY'].map(f => (
-                  <button key={f} onClick={() => setMarketFilter(f as any)} className={`px-3 py-1.5 rounded text-[8px] font-black whitespace-nowrap transition-colors border ${marketFilter === f ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
-                    {f}
-                  </button>
-               ))}
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-              {filteredMarket.length === 0 ? <div className="text-slate-600 text-center py-20 italic">Eşya bulunamadı.</div> : filteredMarket.map(listing => (
-                  <div key={listing.id} className="bg-[#0f172a] border-2 border-slate-800 p-3 rounded flex flex-col gap-2 transition-all">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-3">
-                         <div className="w-12 h-12 bg-slate-950 border border-slate-700 rounded flex items-center justify-center text-2xl" style={{borderColor: RARITY_COLORS[listing.item.rarity] + '60', color: RARITY_COLORS[listing.item.rarity]}}>
-                           {listing.item.type === 'WEAPON' ? '⚔️' : listing.item.type === 'ACCESSORY' ? '💍' : '🛡️'}
-                         </div>
-                         <div><p className="text-[11px] font-black uppercase tracking-tight" style={{color: RARITY_COLORS[listing.item.rarity]}}>{listing.item.name}</p><p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Satıcı: {listing.sellerName}</p></div>
-                      </div>
-                      <div className="flex flex-col items-end"><span className="text-[8px] font-black text-amber-500/60 uppercase">Fiyat</span><span className="text-sm font-black text-amber-400 leading-none">💰 {listing.price.toLocaleString()}</span></div>
+            <div className="flex-1 overflow-y-auto space-y-3">
+              {globalMarket.length === 0 ? <div className="text-slate-600 text-center py-20 italic">Henüz ürün yok.</div> : globalMarket.map(listing => (
+                  <div key={listing.id} className="bg-[#0f172a] border border-slate-800 p-3 rounded flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                       <div className="w-10 h-10 bg-slate-950 border border-slate-700 rounded flex items-center justify-center text-xl" style={{color: RARITY_COLORS[listing.item.rarity]}}>{listing.item.type === 'WEAPON' ? '⚔️' : '💍'}</div>
+                       <div><p className="text-[10px] font-black" style={{color: RARITY_COLORS[listing.item.rarity]}}>{listing.item.name}</p><p className="text-[7px] text-slate-500 uppercase">SATICI: {listing.sellerName}</p></div>
                     </div>
-                    <button onClick={() => {
-                        if (stats.gold >= listing.price) {
-                           setStats(prev => ({...prev, gold: prev.gold - listing.price, inventory: [...prev.inventory, listing.item]}));
-                           setGlobalMarket(prev => prev.filter(l => l.id !== listing.id));
-                           alert("Satın alındı!");
-                        } else alert("Altın yetersiz!");
-                    }} className="w-full mt-1 bg-amber-600 text-slate-950 py-2 rounded text-[10px] font-black uppercase tracking-widest active:scale-95">Satın Al</button>
+                    <div className="flex flex-col items-end gap-1">
+                       <span className="text-xs font-black text-amber-400">💰 {listing.price}</span>
+                       <button onClick={() => {
+                          if (stats.gold >= listing.price) {
+                             setStats(prev => ({...prev, gold: prev.gold - listing.price, inventory: [...prev.inventory, listing.item]}));
+                             setGlobalMarket(prev => prev.filter(l => l.id !== listing.id));
+                             alert("Satın alındı!");
+                          } else alert("Yetersiz altın!");
+                       }} className="bg-amber-600 text-slate-950 px-3 py-1 rounded text-[8px] font-black uppercase">AL</button>
+                    </div>
                   </div>
               ))}
             </div>
-            <button onClick={() => setShowGlobalPazar(false)} className="mt-4 bg-slate-800 py-4 rounded-xl text-xs font-black uppercase text-slate-300">Geri Dön</button>
           </div>
       )}
 
-      {/* PREMIUM SHOP */}
-      {showPremiumShop && (
-        <div className="absolute inset-0 z-[150] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
-           <div className="flex justify-between items-center mb-6 border-b border-amber-500 pb-2">
-              <h2 className="text-xl font-black text-amber-500 uppercase italic tracking-widest">Premium Shop</h2>
-              <button onClick={() => setShowPremiumShop(false)} className="text-slate-500 text-2xl">✕</button>
+      {activeTab === 'NPC' && (
+          <div className="absolute inset-0 z-[100] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-6 border-b border-amber-900/40 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase italic">Jang'an Market</h2>
+              <button onClick={() => setActiveTab('GAME')} className="text-slate-500 text-2xl">✕</button>
             </div>
-            <div className="space-y-6 overflow-y-auto">
-               <div className="bg-gradient-to-br from-amber-900/40 to-slate-900 border-2 border-amber-500 p-4 rounded-xl shadow-2xl">
-                  <div className="flex justify-between items-start mb-2"><span className="bg-amber-500 text-black text-[10px] font-black px-2 py-0.5 rounded uppercase">Bestseller</span><span className="text-amber-500 font-black text-sm">⭐ 250 Stars</span></div>
-                  <h3 className="text-lg font-black text-white">VIP ÜYELİK (KALICI)</h3>
-                  <ul className="mt-2 space-y-1 text-[10px] text-amber-200 font-bold uppercase"><li>✓ 2x XP Kazancı</li><li>✓ 2x GOLD Kazancı</li><li>✓ AUTO-POTION Özelliği</li></ul>
-                  <button onClick={() => { setStats(prev => ({ ...prev, isPremium: true, autoPotionEnabled: true })); setShowPremiumShop(false); }} className="w-full mt-4 bg-amber-500 text-black py-3 rounded-lg font-black uppercase tracking-widest shadow-xl">SATIN AL</button>
+            <div className="space-y-4">
+               <div className="bg-[#0f172a] border border-slate-800 p-4 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-4"><span className="text-3xl">🧪</span><div><p className="text-xs font-black text-red-400 uppercase">HP Potion</p><p className="text-[9px] text-slate-500 font-bold">+350 HP</p></div></div>
+                  <button onClick={() => { if (stats.gold >= 350) setStats(prev => ({ ...prev, gold: prev.gold - 350, potions: { ...prev.potions, hp: prev.potions.hp + 1 } })); }} className="bg-amber-600 text-slate-950 text-[10px] font-black px-4 py-2 rounded">350G</button>
+               </div>
+               <div className="bg-[#0f172a] border border-slate-800 p-4 rounded flex justify-between items-center">
+                  <div className="flex items-center gap-4"><span className="text-3xl">🧪</span><div><p className="text-xs font-black text-sky-400 uppercase">MP Potion</p><p className="text-[9px] text-slate-500 font-bold">+250 MP</p></div></div>
+                  <button onClick={() => { if (stats.gold >= 350) setStats(prev => ({ ...prev, gold: prev.gold - 350, potions: { ...prev.potions, mp: prev.potions.mp + 1 } })); }} className="bg-amber-600 text-slate-950 text-[10px] font-black px-4 py-2 rounded">350G</button>
                </div>
             </div>
-            <button onClick={() => setShowPremiumShop(false)} className="mt-auto bg-slate-800 py-4 rounded-xl text-xs font-black uppercase text-slate-300">Geri</button>
+          </div>
+      )}
+
+      {activeTab === 'DNG' && (
+          <div className="absolute inset-0 z-[100] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="flex justify-between items-center mb-6 border-b border-amber-900/40 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase italic">Zindanlar</h2>
+              <button onClick={() => setActiveTab('GAME')} className="text-slate-500 text-2xl">✕</button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-4">
+              {SRO_DUNGEONS.map(dungeon => (
+                <div key={dungeon.id} className={`bg-[#0f172a] border-2 p-4 rounded ${stats.lvl >= dungeon.minLvl ? 'border-amber-500/30' : 'border-slate-800 opacity-60'}`}>
+                  <h3 className="text-sm font-black text-white uppercase">{dungeon.name}</h3>
+                  <p className="text-[9px] text-slate-400 mt-1">{dungeon.description}</p>
+                  <div className="flex justify-between items-center mt-3">
+                     <span className="text-[10px] text-amber-400 font-black">Lv.{dungeon.minLvl} | 💰 {dungeon.entryFee}G</span>
+                     <button onClick={() => enterDungeon(dungeon)} className="bg-amber-600 text-slate-950 text-[9px] font-black px-4 py-1.5 rounded uppercase">GİRİŞ</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+      )}
+
+      {activeTab === 'VIP' && (
+        <div className="absolute inset-0 z-[150] bg-[#020617] flex flex-col p-6 animate-in slide-in-from-bottom duration-300">
+           <div className="flex justify-between items-center mb-8 border-b border-amber-500 pb-2">
+              <h2 className="text-xl font-black text-amber-500 uppercase italic tracking-widest">Premium Shop</h2>
+              <button onClick={() => setActiveTab('GAME')} className="text-slate-500 text-2xl">✕</button>
+            </div>
+            <div className="bg-gradient-to-br from-amber-900/40 to-slate-900 border-2 border-amber-500 p-6 rounded-2xl shadow-2xl">
+               <div className="flex justify-between items-start mb-4"><span className="bg-amber-500 text-black text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-tighter">VIP Üyelik</span><span className="text-amber-500 font-black text-sm">⭐ 250 Stars</span></div>
+               <h3 className="text-xl font-black text-white italic">EFSANEVİ PAKET</h3>
+               <ul className="mt-4 space-y-2 text-[11px] text-amber-100/80 font-bold uppercase tracking-wide"><li>✓ 2.0x Tecrübe (XP)</li><li>✓ 2.0x Altın (Gold)</li><li>✓ Otomatik İksir Desteği</li><li>✓ Özel VIP İkonu</li></ul>
+               <button onClick={buyPremium} className="w-full mt-8 bg-amber-500 text-black py-4 rounded-xl font-black uppercase tracking-[0.2em] shadow-[0_0_20px_rgba(245,158,11,0.5)] active:scale-95 transition-all">HEMEN SATIN AL</button>
+            </div>
+            <button onClick={() => setActiveTab('GAME')} className="mt-auto bg-slate-800/50 py-4 rounded-xl text-xs font-black uppercase text-slate-400 tracking-widest">GERİ DÖN</button>
         </div>
       )}
 
       {/* FOOTER CONTROLS */}
       <footer className="p-4 bg-[#0f172a] border-t-2 border-amber-900/30 grid grid-cols-6 gap-1 relative z-[90]">
-        <button onClick={() => setShowMarket(true)} className="aspect-square bg-slate-800/80 rounded border border-slate-700/50 flex flex-col items-center justify-center shadow-xl active:bg-slate-700"><span className="text-lg">🏪</span><span className="text-[6px] font-black text-slate-400 mt-1 uppercase">NPC</span></button>
-        <button onClick={() => setShowDungeons(true)} className="aspect-square bg-slate-800/80 rounded border border-slate-700/50 flex flex-col items-center justify-center shadow-xl active:bg-slate-700"><span className="text-lg">🏰</span><span className="text-[6px] font-black text-slate-400 mt-1 uppercase">DNG</span></button>
-        <button onClick={() => setShowPremiumShop(true)} className="col-span-2 bg-gradient-to-b from-amber-400 to-amber-600 text-black font-black rounded shadow-[0_0_15px_rgba(251,191,36,0.3)] active:translate-y-1 transition-all uppercase tracking-widest text-[10px] border-b-4 border-amber-800 flex items-center justify-center gap-1">⭐ PREMIUM</button>
-        <button onClick={() => setShowGlobalPazar(true)} className="aspect-square bg-indigo-900/40 rounded border border-indigo-500/30 flex flex-col items-center justify-center shadow-xl active:bg-indigo-800/60"><span className="text-lg">⚖️</span><span className="text-[6px] font-black text-indigo-300 mt-1 uppercase">PAZAR</span></button>
-        <button onClick={() => setShowInventory(true)} className="aspect-square bg-slate-800/80 rounded border border-slate-700/50 flex flex-col items-center justify-center shadow-xl active:bg-slate-700"><span className="text-lg">🎒</span><span className="text-[6px] font-black text-slate-400 mt-1 uppercase">BAG</span></button>
+        <button onClick={() => setActiveTab('NPC')} className={`aspect-square rounded border flex flex-col items-center justify-center transition-all ${activeTab === 'NPC' ? 'bg-amber-600 border-amber-400 text-slate-950' : 'bg-slate-800/80 border-slate-700/50 text-slate-400'}`}>
+           <span className="text-lg">🏪</span><span className="text-[6px] font-black mt-1 uppercase">NPC</span>
+        </button>
+        <button onClick={() => setActiveTab('DNG')} className={`aspect-square rounded border flex flex-col items-center justify-center transition-all ${activeTab === 'DNG' ? 'bg-amber-600 border-amber-400 text-slate-950' : 'bg-slate-800/80 border-slate-700/50 text-slate-400'}`}>
+           <span className="text-lg">🏰</span><span className="text-[6px] font-black mt-1 uppercase">DNG</span>
+        </button>
+        <button onClick={() => setActiveTab('VIP')} className="col-span-2 bg-gradient-to-b from-amber-400 to-amber-600 text-black font-black rounded shadow-[0_0_15px_rgba(251,191,36,0.3)] active:translate-y-1 transition-all uppercase tracking-widest text-[10px] border-b-4 border-amber-800 flex items-center justify-center gap-1">
+           ⭐ PREMIUM
+        </button>
+        <button onClick={() => setActiveTab('MARKET')} className={`aspect-square rounded border flex flex-col items-center justify-center transition-all ${activeTab === 'MARKET' ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-indigo-950/40 border-indigo-500/30 text-indigo-300'}`}>
+           <span className="text-lg">⚖️</span><span className="text-[6px] font-black mt-1 uppercase">PAZAR</span>
+        </button>
+        <button onClick={() => setActiveTab('BAG')} className={`aspect-square rounded border flex flex-col items-center justify-center transition-all ${activeTab === 'BAG' ? 'bg-amber-600 border-amber-400 text-slate-950' : 'bg-slate-800/80 border-slate-700/50 text-slate-400'}`}>
+           <span className="text-lg">🎒</span><span className="text-[6px] font-black mt-1 uppercase">BAG</span>
+        </button>
       </footer>
     </div>
   );
