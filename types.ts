@@ -27,7 +27,7 @@ export interface Skill {
   name: string;
   mpCost: number;
   damageMultiplier: number;
-  cooldown: number; // in milliseconds
+  cooldown: number;
   icon: string;
   color: string;
 }
@@ -36,8 +36,8 @@ export type MobAbilityType = 'POISON' | 'CHARGE' | 'STUN';
 
 export interface MobAbility {
   type: MobAbilityType;
-  chance: number; // 0.0 to 1.0
-  cooldown: number; // ms
+  chance: number;
+  cooldown: number;
 }
 
 export interface PlayerStats {
@@ -62,7 +62,7 @@ export interface PlayerStats {
 export interface PlayerDebuff {
   type: MobAbilityType;
   endTime: number;
-  value?: number; // Damage for poison, etc.
+  value?: number;
 }
 
 export interface MobTemplate {
@@ -82,11 +82,11 @@ export interface DungeonTemplate {
   name: string;
   minLvl: number;
   waves: number;
-  mobPool: string[]; // Mob IDs
+  mobPool: string[];
   bossId: string;
   goldReward: number;
   entryFee: number;
-  specialDropRate: number; // Chance for high rarity item
+  specialDropRate: number;
   description: string;
 }
 
