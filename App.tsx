@@ -161,6 +161,9 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-[#020617] text-slate-200">
+      <div className="absolute top-0 left-0 z-[100] p-1 pointer-events-none">
+        <span className="text-[8px] font-mono text-slate-600">v1.0.1</span>
+      </div>
       <StatusBar stats={{...stats, maxHp: totalMaxHp}} totalAtk={totalAtk} totalDef={totalDef} />
       
       <div className={`fixed inset-0 z-[9999] bg-[#020617] flex flex-col p-6 transition-transform duration-300 ${activeTab === 'GAME' ? 'translate-y-full' : 'translate-y-0'}`}>
@@ -168,7 +171,7 @@ const App: React.FC = () => {
            <h2 className="text-xl font-black text-amber-500 italic uppercase">{activeTab}</h2>
            <button onClick={() => setActiveTab('GAME')} className="text-slate-400 text-3xl">✕</button>
         </div>
-        <div className="flex-1 overflow-y-auto pb-24">
+        <div className="flex-1 overflow-y-auto pb-24 custom-scrollbar">
            {activeTab === 'BAG' && (
              <div className="space-y-3">
                {stats.inventory.map(item => (
@@ -181,6 +184,7 @@ const App: React.FC = () => {
                     }} className="w-full mt-3 py-2 bg-slate-800 rounded-xl font-bold text-[10px]">{item.isEquipped ? 'ÇIKAR' : 'KUŞAN'}</button>
                  </div>
                ))}
+               {stats.inventory.length === 0 && <div className="text-center text-slate-500 text-xs py-10 italic">Çantanız boş...</div>}
                <button onClick={saveToTelegram} className="w-full bg-emerald-600 text-black py-4 rounded-2xl font-black text-xs shadow-xl mt-4">💾 KAYDET VE ÇIK</button>
              </div>
            )}
@@ -188,7 +192,10 @@ const App: React.FC = () => {
              <div className="space-y-4">
                {[POTION_CONFIG.HP_POTION, POTION_CONFIG.MP_POTION].map((pot, idx) => (
                   <div key={idx} className="bg-slate-900 p-5 rounded-2xl flex justify-between items-center border border-slate-800">
-                     <span className="text-white text-xs font-bold">{pot.name}</span>
+                     <div className="flex flex-col">
+                        <span className="text-white text-xs font-bold">{pot.name}</span>
+                        <span className="text-slate-500 text-[9px]">Stok: {idx === 0 ? stats.potions.hp : stats.potions.mp}</span>
+                     </div>
                      <button onClick={() => { if (stats.gold >= pot.cost) setStats(prev => ({...prev, gold: prev.gold - pot.cost, potions: {...prev.potions, [idx === 0 ? 'hp' : 'mp']: prev.potions[idx === 0 ? 'hp' : 'mp'] + 1}})); }} className="bg-amber-600 text-black text-xs font-black px-6 py-2 rounded-xl">{pot.cost}G</button>
                   </div>
                ))}
@@ -199,13 +206,16 @@ const App: React.FC = () => {
                {SRO_DUNGEONS.map(dng => (
                   <div key={dng.id} className="bg-slate-900 border-2 border-slate-800 p-6 rounded-3xl">
                      <h3 className="text-amber-100 font-black text-sm mb-2">{dng.name} (Lv.{dng.minLvl})</h3>
+                     <p className="text-slate-400 text-[10px] mb-4 leading-relaxed">{dng.description}</p>
                      <button onClick={() => {
                        if (stats.lvl >= dng.minLvl && stats.gold >= dng.entryFee) {
                          setStats(prev => ({ ...prev, gold: prev.gold - dng.entryFee }));
                          setActiveDungeon({ template: dng, currentWave: 1 });
                          setCurrentMob(null); setActiveTab('GAME');
                        }
-                     }} className="w-full mt-4 bg-amber-600 text-black py-3 rounded-2xl font-black text-[10px]">GİRİŞ: {dng.entryFee}G</button>
+                     }} className={`w-full bg-amber-600 text-black py-3 rounded-2xl font-black text-[10px] ${stats.lvl < dng.minLvl ? 'opacity-50 grayscale' : ''}`}>
+                       {stats.lvl < dng.minLvl ? `DÜŞÜK LEVEL (Lv.${dng.minLvl})` : `GİRİŞ: ${dng.entryFee}G`}
+                     </button>
                   </div>
                ))}
              </div>
@@ -216,47 +226,55 @@ const App: React.FC = () => {
       <main className={`flex-1 flex flex-col items-center justify-center p-6 relative ${isHurt ? 'hit-shake bg-red-950/10' : ''}`}>
         {currentMob ? (
           <div className="flex flex-col items-center gap-8 w-full max-w-xs">
-            <div className="bg-slate-900/90 border-2 border-slate-800 p-3 rounded-2xl w-full text-center">
-              <h2 className="text-[10px] font-black text-amber-200 uppercase">{currentMob.name} (Lv{currentMob.lvl})</h2>
-              <div className="h-2 w-full bg-black rounded-full mt-2 overflow-hidden">
-                <div className="h-full bg-red-600 transition-all" style={{ width: `${(currentMob.curHp/currentMob.hp)*100}%` }} />
+            <div className="bg-slate-900/90 border-2 border-slate-800 p-3 rounded-2xl w-full text-center relative overflow-hidden shadow-2xl">
+              {activeDungeon && <div className="absolute top-0 right-0 bg-amber-600 text-[7px] px-2 font-black text-black uppercase">Wave {activeDungeon.currentWave}/{activeDungeon.template.waves}</div>}
+              <h2 className="text-[10px] font-black text-amber-200 uppercase tracking-widest">{currentMob.name} (Lv{currentMob.lvl})</h2>
+              <div className="h-2 w-full bg-black rounded-full mt-2 overflow-hidden border border-slate-800">
+                <div className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all duration-300" style={{ width: `${(currentMob.curHp/currentMob.hp)*100}%` }} />
               </div>
             </div>
-            <div className="relative h-44 w-full flex items-center justify-center" onClick={() => !isStunned && useSkill(SRO_SKILLS[0])}>
+            
+            <div className="relative h-44 w-full flex items-center justify-center cursor-crosshair" onClick={() => !isStunned && useSkill(SRO_SKILLS[0])}>
               {damagePops.map(pop => (
-                <div key={pop.id} className="absolute dmg-float font-black z-[60] text-3xl pointer-events-none" style={{ left: `${pop.x}%`, top: `${pop.y}%`, color: pop.color }}>
-                  {pop.value}
+                <div key={pop.id} className="absolute dmg-float font-black z-[60] text-3xl pointer-events-none perspective-text italic" style={{ left: `${pop.x}%`, top: `${pop.y}%`, color: pop.color }}>
+                  {pop.textValue || pop.value}
                 </div>
               ))}
-              <img src={currentMob.img} className="w-40 h-40 object-contain transition-transform active:scale-95" />
+              <img src={currentMob.img} className={`w-40 h-40 object-contain transition-all duration-75 active:scale-90 ${currentMob.isBoss ? 'scale-125 brightness-125 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]' : ''}`} />
             </div>
+
             <div className="grid grid-cols-4 gap-3 w-full">
               {SRO_SKILLS.map(skill => (
                   <button key={skill.id} onClick={() => useSkill(skill)} disabled={!!skillCooldowns[skill.id] || isStunned}
-                    className={`relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center transition-all ${skillCooldowns[skill.id] ? 'opacity-40 bg-black' : 'bg-slate-900'}`}>
-                    <span className="text-2xl">{skill.icon}</span>
-                    <span className="text-[6px] font-black text-slate-500 uppercase">{skill.name.split(' ')[0]}</span>
+                    className={`relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center transition-all shadow-lg ${skillCooldowns[skill.id] ? 'opacity-40 bg-black border-slate-900 scale-95' : 'bg-slate-900 border-slate-700 active:scale-90 active:border-amber-500'}`}>
+                    {skillCooldowns[skill.id] && (
+                      <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center z-10">
+                        <span className="text-[10px] font-black text-white">{Math.ceil((skillCooldowns[skill.id] - Date.now())/1000)}s</span>
+                      </div>
+                    )}
+                    <span className="text-2xl mb-1">{skill.icon}</span>
+                    <span className="text-[6px] font-black text-slate-500 uppercase tracking-tighter">{skill.name.split(' ')[0]}</span>
                   </button>
               ))}
             </div>
           </div>
-        ) : <div className="text-amber-500 animate-pulse font-black text-xs uppercase">Bölge Keşfediliyor...</div>}
+        ) : <div className="text-amber-500 animate-pulse font-black text-xs uppercase tracking-widest">Bölge Keşfediliyor...</div>}
       </main>
 
       <footer className="h-24 bg-[#0f172a] border-t-2 border-slate-800 grid grid-cols-5 gap-2 p-3 pb-6 relative z-[50]">
-        <button onClick={() => setActiveTab('NPC')} className={`rounded-2xl flex flex-col items-center justify-center ${activeTab === 'NPC' ? 'bg-amber-600 text-black' : 'bg-slate-800/40 text-slate-500'}`}>
+        <button onClick={() => setActiveTab('NPC')} className={`rounded-2xl flex flex-col items-center justify-center transition-colors ${activeTab === 'NPC' ? 'bg-amber-600 text-black' : 'bg-slate-800/40 text-slate-500'}`}>
            <span className="text-xl">🏪</span><span className="text-[8px] font-black">SHOP</span>
         </button>
-        <button onClick={() => setActiveTab('DNG')} className={`rounded-2xl flex flex-col items-center justify-center ${activeTab === 'DNG' ? 'bg-amber-600 text-black' : 'bg-slate-800/40 text-slate-500'}`}>
+        <button onClick={() => setActiveTab('DNG')} className={`rounded-2xl flex flex-col items-center justify-center transition-colors ${activeTab === 'DNG' ? 'bg-amber-600 text-black' : 'bg-slate-800/40 text-slate-500'}`}>
            <span className="text-xl">🏰</span><span className="text-[8px] font-black">DNG</span>
         </button>
-        <button className="bg-gradient-to-t from-amber-600 to-amber-400 text-black font-black rounded-2xl flex flex-col items-center justify-center">
+        <button className="bg-gradient-to-t from-amber-600 to-amber-400 text-black font-black rounded-2xl flex flex-col items-center justify-center active:scale-95 shadow-lg">
            <span className="text-xl">⭐</span><span className="text-[8px] font-black">VIP</span>
         </button>
-        <button onClick={() => setActiveTab('MARKET')} className={`rounded-2xl flex flex-col items-center justify-center ${activeTab === 'MARKET' ? 'bg-indigo-600 text-white' : 'bg-slate-800/40 text-slate-500'}`}>
+        <button onClick={() => setActiveTab('MARKET')} className={`rounded-2xl flex flex-col items-center justify-center transition-colors ${activeTab === 'MARKET' ? 'bg-indigo-600 text-white' : 'bg-slate-800/40 text-slate-500'}`}>
            <span className="text-xl">⚖️</span><span className="text-[8px] font-black">PAZAR</span>
         </button>
-        <button onClick={() => setActiveTab('BAG')} className={`rounded-2xl flex flex-col items-center justify-center ${activeTab === 'BAG' ? 'bg-amber-600 text-black' : 'bg-slate-800/40 text-slate-500'}`}>
+        <button onClick={() => setActiveTab('BAG')} className={`rounded-2xl flex flex-col items-center justify-center transition-colors ${activeTab === 'BAG' ? 'bg-amber-600 text-black' : 'bg-slate-800/40 text-slate-500'}`}>
            <span className="text-xl">🎒</span><span className="text-[8px] font-black">BAG</span>
         </button>
       </footer>
