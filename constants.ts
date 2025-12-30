@@ -122,30 +122,6 @@ export const SRO_DUNGEONS: DungeonTemplate[] = [
     entryFee: 200000,
     specialDropRate: 0.35,
     description: 'Dondurucu soğuk ve acımasız canavarlar. Uruchi seni bekliyor.'
-  },
-  {
-    id: 'taklamakan_tomb',
-    name: 'Karakoram Zirvesi',
-    minLvl: 35,
-    waves: 15,
-    mobPool: ['niyasniper', 'penon'],
-    bossId: 'isyutaru',
-    goldReward: 1800000,
-    entryFee: 500000,
-    specialDropRate: 0.45,
-    description: 'Buz Kraliçesi Isyutaru nun meskeni. Sadece en güçlüler sağ çıkabilir.'
-  },
-  {
-    id: 'kings_valley',
-    name: 'Krallar Vadisi',
-    minLvl: 45,
-    waves: 20,
-    mobPool: ['niyasniper', 'ishade'],
-    bossId: 'lordyarkan',
-    goldReward: 4500000,
-    entryFee: 1000000,
-    specialDropRate: 0.6,
-    description: 'Silkroad ın gerçek hükümdarı Lord Yarkan ile yüzleşin. Servet ve şan burada!'
   }
 ];
 
