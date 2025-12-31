@@ -68,10 +68,13 @@ export const SRO_MOBS: MobTemplate[] = [
   { id: 'ghostsungsung', name: "Ghost SungSung", lvl: 20, hp: 15000, atk: 850, img: "https://i.ibb.co/r7v9t7H/earthghost.png", xpReward: 150, goldReward: 4000 },
   { id: 'ishade', name: "Ishade", lvl: 25, hp: 8500, atk: 1200, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 15, goldReward: 5000 },
   { id: 'penon', name: "Penon Warrior", lvl: 28, hp: 11000, atk: 1600, img: "https://i.ibb.co/r7v9t7H/earthghost.png", xpReward: 18, goldReward: 7500 },
-  { id: 'uruchi', name: "Uruchi", lvl: 30, hp: 50000, atk: 3500, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 500, goldReward: 25000 },
+  { id: 'uruchi', name: "Uruchi", lvl: 30, hp: 65000, atk: 3800, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 500, goldReward: 25000 },
   { id: 'niyasniper', name: "Niya Sniper", lvl: 35, hp: 18000, atk: 2500, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 35, goldReward: 15000 },
-  { id: 'isyutaru', name: "Isyutaru", lvl: 40, hp: 150000, atk: 8000, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 2000, goldReward: 100000 },
-  { id: 'lordyarkan', name: "Lord Yarkan", lvl: 50, hp: 500000, atk: 25000, img: "https://i.ibb.co/VvzK9R1/chakji.png", xpReward: 10000, goldReward: 500000 },
+  { id: 'isyutaru', name: "Isyutaru", lvl: 40, hp: 180000, atk: 8500, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 2000, goldReward: 100000 },
+  { id: 'niyaguard', name: "Niya Guard", lvl: 45, hp: 35000, atk: 5500, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 50, goldReward: 20000 },
+  { id: 'lordyarkan', name: "Lord Yarkan", lvl: 50, hp: 600000, atk: 28000, img: "https://i.ibb.co/VvzK9R1/chakji.png", xpReward: 10000, goldReward: 500000 },
+  { id: 'roc', name: "Roc", lvl: 60, hp: 1500000, atk: 60000, img: "https://i.ibb.co/N1pXW5j/wolf.png", xpReward: 50000, goldReward: 2500000 },
+  { id: 'medusa', name: "Medusa", lvl: 70, hp: 6000000, atk: 140000, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 200000, goldReward: 10000000 },
 ];
 
 export const SRO_DUNGEONS: DungeonTemplate[] = [
@@ -82,10 +85,9 @@ export const SRO_DUNGEONS: DungeonTemplate[] = [
     waves: 5,
     mobPool: ['smalleye', 'oldweasel'],
     bossId: 'waterghost',
-    goldReward: 35000,
-    entryFee: 10000,
-    specialDropRate: 0.15,
-    description: 'Karanlık ve nemli bir mağara. İlk büyük sınavın burada başlıyor.'
+    entryFee: 20000,
+    specialDropRate: 0.10,
+    description: 'Karanlık ve nemli bir mağara. İlk nadir eşyanı burada bulabilirsin.'
   },
   {
     id: 'bandit_fortress',
@@ -94,34 +96,64 @@ export const SRO_DUNGEONS: DungeonTemplate[] = [
     waves: 8,
     mobPool: ['yeowa', 'bandit'],
     bossId: 'tiger',
-    goldReward: 90000,
-    entryFee: 30000,
-    specialDropRate: 0.2,
-    description: 'Eşkıyaların kalesi. İçerideki altınlar girişte ödediğinden çok daha fazlası!'
+    entryFee: 50000,
+    specialDropRate: 0.12,
+    description: 'Eşkıyaların kalesi. Boss mağlup edildiğinde değerli silahlar düşebilir.'
   },
   {
     id: 'tarim_basin',
     name: 'Tarim Havzası',
-    minLvl: 18,
+    minLvl: 20,
     waves: 10,
     mobPool: ['chakji', 'bandit'],
     bossId: 'ghostsungsung',
-    goldReward: 250000,
-    entryFee: 75000,
-    specialDropRate: 0.25,
-    description: 'Kadim ruhların koruduğu bereketli topraklar.'
+    entryFee: 120000,
+    specialDropRate: 0.15,
+    description: 'Kadim ruhların koruduğu bereketli topraklar. Drop şansı daha yüksek.'
   },
   {
     id: 'karakoram_glade',
     name: 'Karakoram Buzulu',
-    minLvl: 25,
+    minLvl: 30,
     waves: 12,
     mobPool: ['ishade', 'penon'],
     bossId: 'uruchi',
-    goldReward: 750000,
-    entryFee: 200000,
-    specialDropRate: 0.35,
-    description: 'Dondurucu soğuk ve acımasız canavarlar. Uruchi seni bekliyor.'
+    entryFee: 300000,
+    specialDropRate: 0.18,
+    description: 'Dondurucu soğukta Uruchi\'nin hazinesini ele geçir.'
+  },
+  {
+    id: 'taklamakan_desert',
+    name: 'Taklamakan Çölü',
+    minLvl: 40,
+    waves: 15,
+    mobPool: ['niyasniper', 'niyaguard'],
+    bossId: 'isyutaru',
+    entryFee: 750000,
+    specialDropRate: 0.22,
+    description: 'Sonsuz kumlarda Isyutaru\'nun nadir mühürlü ekipmanlarını ara.'
+  },
+  {
+    id: 'roc_mountain',
+    name: 'Roc Dağı',
+    minLvl: 50,
+    waves: 18,
+    mobPool: ['niyaguard', 'niyasniper'],
+    bossId: 'lordyarkan',
+    entryFee: 1800000,
+    specialDropRate: 0.26,
+    description: 'Bulutların üzerinde Lord Yarkan\'dan SUN item düşürme şansı!'
+  },
+  {
+    id: 'serpent_temple',
+    name: 'Yılan Tapınağı',
+    minLvl: 60,
+    waves: 25,
+    mobPool: ['niyaguard', 'niyasniper'],
+    bossId: 'medusa',
+    entryFee: 5000000,
+    specialDropRate: 0.30,
+    description: 'En yüksek drop şansı burada. Medusa seni bekliyor.'
   }
 ];
 
