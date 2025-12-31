@@ -14,32 +14,9 @@ export interface Item {
   isEquipped: boolean;
 }
 
-export interface MarketListing {
-  id: string;
-  item: Item;
-  sellerName: string;
-  price: number;
-  date: number;
-}
-
-export interface Skill {
-  id: string;
-  name: string;
-  mpCost: number;
-  damageMultiplier: number;
-  cooldown: number;
-  icon: string;
-  color: string;
-  unlockLvl?: number;
-  unlockCost?: number;
-}
-
-export type MobAbilityType = 'POISON' | 'CHARGE' | 'STUN';
-
-export interface MobAbility {
-  type: MobAbilityType;
-  chance: number;
-  cooldown: number;
+export interface PotionStats {
+  hp_s: number; hp_m: number; hp_l: number;
+  mp_s: number; mp_m: number; mp_l: number;
 }
 
 export interface VipFeature {
@@ -60,10 +37,7 @@ export interface PlayerStats {
   atk: number;    
   def: number;    
   inventory: Item[];
-  potions: {
-    hp: number;
-    mp: number;
-  };
+  potions: PotionStats;
   unlockedSkills: string[];
   vip: {
     autoPotion: VipFeature;
@@ -73,11 +47,19 @@ export interface PlayerStats {
   };
 }
 
-export interface PlayerDebuff {
-  type: MobAbilityType;
-  endTime: number;
-  value?: number;
+export interface Skill {
+  id: string;
+  name: string;
+  mpCost: number;
+  damageMultiplier: number;
+  cooldown: number;
+  icon: string;
+  color: string;
+  unlockLvl?: number;
+  unlockCost?: number;
 }
+
+export type MobAbilityType = 'POISON' | 'CHARGE' | 'STUN';
 
 export interface MobTemplate {
   id: string;
@@ -88,7 +70,6 @@ export interface MobTemplate {
   img: string;
   xpReward: number;
   goldReward: number;
-  abilities?: MobAbility[];
 }
 
 export interface DungeonTemplate {
@@ -117,11 +98,4 @@ export interface DamagePop {
   x: number;
   y: number;
   textValue?: string;
-  isSkill?: boolean;
-}
-
-declare global {
-  interface Window {
-    Telegram: any;
-  }
 }
