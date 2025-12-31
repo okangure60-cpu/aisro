@@ -42,6 +42,14 @@ const rarityRank = (r: any) => {
   return 1;
 };
 
+const rollDamage = (base: number, spreadPct = 0.10) => {
+  const min = 1 - spreadPct;
+  const max = 1 + spreadPct;
+  const r = min + Math.random() * (max - min);
+  return Math.max(1, Math.floor(base * r));
+};
+
+
 const App: React.FC = () => {
   const [stats, setStats] = useState<PlayerStats | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -61,7 +69,7 @@ const App: React.FC = () => {
   const [activeDungeon, setActiveDungeon] = useState<{ template: DungeonTemplate, currentWave: number } | null>(null);
   const [skillCooldowns, setSkillCooldowns] = useState<Record<string, number>>({});
   const [toast, setToast] = useState<string | null>(null);
-  const [shopQuantities, setShopQuantities] = useState<Record<string, number>>({});
+  const [shopQuantities, setShopQuantities] = useState<Record<string, string>>({});
 
   // Enhance UI
   const [enhanceTargetId, setEnhanceTargetId] = useState<string>('');
@@ -86,6 +94,20 @@ const App: React.FC = () => {
   const scaledBonuses = useMemo(() => {
     let gearAtk = 0, gearDef = 0, gearHp = 0;
     for (const it of equippedItems) {
+      const weaponCritChance = useMemo(() => {
+  const w = equippedItems.find(i => i.slot === 'WEAPON');
+  if (!w) return 0;
+
+  let chance = 0.05 + Math.min(15, w.plus) * 0.01; // %5 + her + için %1
+
+  if (w.rarity === 'STAR') chance += 0.02;
+  if (w.rarity === 'MOON') chance += 0.04;
+  if (w.rarity === 'SUN')  chance += 0.07;
+
+  // üst limit (abartmasın)
+  return Math.min(0.35, chance); // max %35
+
+
       const mult = 1 + Math.min(15, it.plus) * 0.08;
       gearAtk += Math.floor(it.atkBonus * mult);
       gearDef += Math.floor(it.defBonus * mult);
@@ -294,8 +316,19 @@ const App: React.FC = () => {
     setStats(prev => ({ ...prev!, mp: prev!.mp - skill.mpCost }));
     setSkillCooldowns(prev => ({ ...prev, [skill.id]: Date.now() + skill.cooldown }));
 
-    const dmg = Math.floor(totalAtk * skill.damageMultiplier);
-    addDamagePop(dmg, skill.color);
+  const base = totalAtk * skill.damageMultiplier;
+
+  const isCrit = Math.random() < weaponCritChance;
+  const critMult = 1.8; // SRO hissi: 1.8 iyi
+  const finalBase = isCrit ? base * critMult : base;
+
+  const dmg = rollDamage(finalBase, 0.10);
+
+  if (isCrit) {
+    addDamagePop('CRIT!', '#facc15'); // sarı
+  }
+  addDamagePop(dmg, skill.color);
+
 
     setCurrentMob(prev => {
       if (!prev) return null;
@@ -314,12 +347,41 @@ const App: React.FC = () => {
           if (!s) return null;
           let nx = s.xp + xp;
           let nl = s.lvl;
-          while (nx >= getXpRequired(nl) && nl < 140) { nx -= getXpRequired(nl); nl++; }
 
-          const newInv = [...s.inventory];
-          if (drop) { newInv.push(drop); showToast(`${drop.name} düştü!`); }
+          let baseAtk = s.atk;
+          let baseDef = s.def;
+          let baseMaxHp = s.maxHp;
+          let baseMaxMp = s.maxMp;
 
-          return { ...s, xp: nx, lvl: nl, gold: s.gold + prev.goldReward, inventory: newInv };
+        while (nx >= getXpRequired(nl) && nl < 140) {
+          nx -= getXpRequired(nl);
+          nl++;
+
+        // ✅ Level up stat artışları (MVP ayar)
+        baseAtk += 2;
+        baseDef += 1;
+        baseMaxHp += 20;
+        baseMaxMp += 10;
+    }
+
+const newInv = [...s.inventory];
+if (drop) { newInv.push(drop); showToast(`${drop.name} düştü!`); }
+
+return {
+  ...s,
+  xp: nx,
+  lvl: nl,
+  atk: baseAtk,
+  def: baseDef,
+  maxHp: baseMaxHp,
+  maxMp: baseMaxMp,
+  // can/mana taşmasın (istersen level-up'ta full da yapabiliriz)
+  hp: Math.min(s.hp, baseMaxHp),
+  mp: Math.min(s.mp, baseMaxMp),
+  gold: s.gold + prev.goldReward,
+  inventory: newInv
+};
+
         });
 
         if (activeDungeon) {
@@ -571,8 +633,10 @@ const App: React.FC = () => {
                   <div className="text-white font-black">Potion Shop</div>
                   <div className="mt-3 grid grid-cols-1 gap-3">
                     {Object.entries(POTION_TIERS).map(([key, pot]) => {
-                      const qty = shopQuantities[key] || 1;
+                      const qtyStr = shopQuantities[key] ?? '1';
+                      const qty = Math.max(1, parseInt(qtyStr || '1', 10));
                       const currentCost = pot.cost * qty;
+
                       return (
                         <div key={key} className="bg-black/30 p-4 rounded-2xl flex justify-between items-center border border-slate-800">
                           <div>
@@ -580,10 +644,19 @@ const App: React.FC = () => {
                             <div className="text-[9px] text-slate-500">+{pot.heal} | Adet: {stats.potions[key.toLowerCase() as keyof PotionStats]}</div>
                           </div>
                           <div className="flex items-center gap-3">
-                            <input type="number" min="1" max="999" value={qty}
-                              onChange={e => setShopQuantities({ ...shopQuantities, [key]: parseInt(e.target.value) || 1 })}
-                              className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs"
-                            />
+                            <input
+  type="number"
+  min={1}
+  max={999}
+  value={qtyStr}
+  onFocus={(e) => e.currentTarget.select()} // ✅ tıklayınca komple seç
+  onChange={(e) => {
+    const v = e.target.value; // '' olabilir
+    setShopQuantities(prev => ({ ...prev, [key]: v }));
+  }}
+  className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs"
+/>
+
                             <button onClick={() => {
                               if (stats.gold < currentCost) return showToast("Yetersiz Gold!");
                               setStats(s => ({
