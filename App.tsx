@@ -327,38 +327,41 @@ const App: React.FC = () => {
           let nx = s.xp + xp;
           let nl = s.lvl;
 
+          // level-up ödülleri (base stat artışı)
           let baseAtk = s.atk;
           let baseDef = s.def;
           let baseMaxHp = s.maxHp;
           let baseMaxMp = s.maxMp;
 
-          // ✅ LEVEL UP: base stat artışı
           while (nx >= getXpRequired(nl) && nl < 140) {
-            nx -= getXpRequired(nl);
+          nx -= getXpRequired(nl);
             nl++;
 
-            baseAtk += 2;
-            baseDef += 1;
-            baseMaxHp += 20;
-            baseMaxMp += 10;
+           // ✅ SRO hissi: her level taban stat artar
+            baseAtk += 3;     // istersen 2 yap
+            baseDef += 2;     // istersen 1 yap
+            baseMaxHp += 35;  // istersen 25-40 arası
+            baseMaxMp += 18;  // istersen 12-20 arası
           }
+
 
           const newInv = [...s.inventory];
           if (drop) { newInv.push(drop); showToast(`${drop.name} düştü!`); }
 
           return {
-            ...s,
-            xp: nx,
-            lvl: nl,
-            atk: baseAtk,
-            def: baseDef,
-            maxHp: baseMaxHp,
-            maxMp: baseMaxMp,
-            hp: Math.min(s.hp, baseMaxHp),
-            mp: Math.min(s.mp, baseMaxMp),
-            gold: s.gold + prev.goldReward,
-            inventory: newInv
-          };
+          ...s,
+          xp: nx,
+        lvl: nl,
+          atk: baseAtk,
+        def: baseDef,
+      maxHp: baseMaxHp,
+      maxMp: baseMaxMp,
+    hp: Math.min(s.hp, baseMaxHp),   // hp taşmasın
+      mp: Math.min(s.mp, baseMaxMp),   // mp taşmasın
+    gold: s.gold + prev.goldReward,
+        inventory: newInv
+};
+
         });
 
         if (activeDungeon) {
