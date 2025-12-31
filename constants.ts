@@ -1,10 +1,26 @@
-import { MobTemplate, ItemRarity, Skill, DungeonTemplate } from './types';
+import { MobTemplate, ItemRarity, Skill, DungeonTemplate, Item } from './types';
 
 export const RARITY_COLORS: Record<ItemRarity, string> = {
   COMMON: '#94a3b8',
   STAR: '#a855f7',
   MOON: '#06b6d4',
   SUN: '#f97316',
+};
+
+// ✅ Satış katsayıları (SRO hissi için)
+export const ITEM_RESALE_MULTIPLIERS: Record<ItemRarity, number> = {
+  COMMON: 0.10,
+  STAR: 0.30,
+  MOON: 0.80,
+  SUN: 2.00,
+};
+
+// ✅ Satış fiyatı fonksiyonu (degree + lvl + rarity + plus)
+export const getResalePrice = (item: Item): number => {
+  const base = item.degree * 2500 + item.lvl * 60;                 // temeli
+  const rarityMult = ITEM_RESALE_MULTIPLIERS[item.rarity];         // rarity çarpanı
+  const plusMult = 1 + Math.min(15, item.plus) * 0.12;             // her + için ~%12
+  return Math.max(1, Math.floor(base * rarityMult * plusMult));
 };
 
 export const SRO_SKILLS: Skill[] = [
@@ -15,7 +31,6 @@ export const SRO_SKILLS: Skill[] = [
 ];
 
 export const SRO_MOBS: MobTemplate[] = [
-  // Jangan (1-20)
   { id: 'mangyang', name: "Mangyang", lvl: 1, hp: 80, atk: 12, img: "https://i.ibb.co/8mR0oXz/mangyang.png", xpReward: 2, goldReward: 15 },
   { id: 'smalleye', name: "Small Eye", lvl: 3, hp: 180, atk: 28, img: "https://i.ibb.co/YV7Nf2S/smalleye.png", xpReward: 5, goldReward: 40 },
   { id: 'oldweasel', name: "Old Weasel", lvl: 5, hp: 320, atk: 45, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 12, goldReward: 80 },
@@ -23,29 +38,23 @@ export const SRO_MOBS: MobTemplate[] = [
   { id: 'bandit', name: "Bandit", lvl: 15, hp: 2200, atk: 280, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 60, goldReward: 450 },
   { id: 'tiger', name: "White Tiger", lvl: 18, hp: 3500, atk: 450, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 90, goldReward: 600 },
 
-  // Donwhang (20-40)
   { id: 'chakji', name: "Chakji", lvl: 22, hp: 6000, atk: 750, img: "https://i.ibb.co/YV7Nf2S/smalleye.png", xpReward: 180, goldReward: 1200 },
   { id: 'earthghost', name: "Earth Ghost", lvl: 26, hp: 8500, atk: 1100, img: "https://i.ibb.co/8mR0oXz/mangyang.png", xpReward: 250, goldReward: 1800 },
   { id: 'uruchi', name: "Uruchi (Unique)", lvl: 40, hp: 85000, atk: 3500, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 5000, goldReward: 50000 },
 
-  // Hotan (40-60)
   { id: 'maong', name: "Maong", lvl: 45, hp: 18000, atk: 2400, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 600, goldReward: 4500 },
   { id: 'penon', name: "Penon Fighter", lvl: 52, hp: 28000, atk: 3800, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 1200, goldReward: 7500 },
   { id: 'isyutaru', name: "Isyutaru (Unique)", lvl: 60, hp: 250000, atk: 8500, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 15000, goldReward: 150000 },
 
-  // Karakoram & Taklamakan (60-80)
   { id: 'niya', name: "Niya Guard", lvl: 72, hp: 65000, atk: 9500, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 4500, goldReward: 18000 },
   { id: 'lordyarkan', name: "Lord Yarkan (Unique)", lvl: 80, hp: 850000, atk: 22000, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 45000, goldReward: 500000 },
 
-  // Roc Mountain & Qin Tomb (80-100)
   { id: 'wingtribe', name: "Wing Tribe", lvl: 88, hp: 125000, atk: 18000, img: "https://i.ibb.co/8mR0oXz/mangyang.png", xpReward: 12000, goldReward: 45000 },
   { id: 'demonshaitan', name: "Demon Shaitan (Unique)", lvl: 100, hp: 2500000, atk: 55000, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 120000, goldReward: 2500000 },
 
-  // Alexandria (100-120)
   { id: 'sandhyena', name: "Sand Hyena", lvl: 105, hp: 280000, atk: 42000, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 35000, goldReward: 85000 },
   { id: 'medusa', name: "Medusa (Unique)", lvl: 115, hp: 8000000, atk: 120000, img: "https://i.ibb.co/LhB2PzF/waterghost.png", xpReward: 500000, goldReward: 10000000 },
 
-  // Mirror Dimension & Baghdad (120-140)
   { id: 'baghdad_soldier', name: "Baghdad Soldier", lvl: 130, hp: 650000, atk: 95000, img: "https://i.ibb.co/0XW5g9s/niya.png", xpReward: 95000, goldReward: 250000 },
   { id: 'karkadann', name: "Karkadann (Unique)", lvl: 140, hp: 25000000, atk: 350000, img: "https://i.ibb.co/mS9X3J1/tiger.png", xpReward: 2500000, goldReward: 50000000 }
 ];
