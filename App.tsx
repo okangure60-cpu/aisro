@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { StatusBar } from './components/StatusBar';
 import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, Skill, DungeonTemplate, PotionStats } from './types';
@@ -93,6 +92,25 @@ const App: React.FC = () => {
     }
   }, [currentMob, spawnMob, activeTab, stats]);
 
+  // Cooldown Cleanup
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setSkillCooldowns(prev => {
+        const next = { ...prev };
+        let changed = false;
+        for (const id in next) {
+          if (next[id] <= now) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 100);
+    return () => clearInterval(timer);
+  }, []);
+
   // Auto Potion Logic
   useEffect(() => {
     if (!stats) return;
@@ -106,7 +124,6 @@ const App: React.FC = () => {
           const maxHp = prev.maxHp + prev.inventory.filter(i => i.isEquipped).reduce((s, i) => s + i.hpBonus, 0);
           
           if (updated.hp < (maxHp * 0.5)) {
-            // Use best HP pot
             if (updated.potions.hp_l > 0) { updated.hp = Math.min(maxHp, updated.hp + POTION_TIERS.HP_L.heal); updated.potions.hp_l--; used = true; }
             else if (updated.potions.hp_m > 0) { updated.hp = Math.min(maxHp, updated.hp + POTION_TIERS.HP_M.heal); updated.potions.hp_m--; used = true; }
             else if (updated.potions.hp_s > 0) { updated.hp = Math.min(maxHp, updated.hp + POTION_TIERS.HP_S.heal); updated.potions.hp_s--; used = true; }
@@ -161,12 +178,14 @@ const App: React.FC = () => {
   const useSkill = useCallback((skill: Skill) => {
     if (!currentMob || !stats) return;
     if (skillCooldowns[skill.id]) return;
+    
     if (!stats.unlockedSkills.includes(skill.id)) {
       if (stats.lvl < (skill.unlockLvl || 0)) { showToast(`Lv.${skill.unlockLvl} gerekli!`); return; }
       if (stats.gold < (skill.unlockCost || 0)) { showToast(`${skill.unlockCost} Gold gerekli!`); return; }
       setStats(prev => ({ ...prev!, gold: prev!.gold - skill.unlockCost!, unlockedSkills: [...prev!.unlockedSkills, skill.id] }));
       return;
     }
+
     if (stats.mp < skill.mpCost) { addDamagePop("MP!", "#0ea5e9"); return; }
     
     setStats(prev => ({ ...prev!, mp: prev!.mp - skill.mpCost }));
@@ -174,6 +193,7 @@ const App: React.FC = () => {
     
     const dmg = Math.floor(totalAtk * skill.damageMultiplier);
     addDamagePop(dmg, skill.color);
+    
     setCurrentMob(prev => {
       if (!prev) return null;
       const nh = prev.curHp - dmg;
@@ -188,6 +208,7 @@ const App: React.FC = () => {
       }
       return { ...prev, curHp: nh };
     });
+    
     if (Math.random() < 0.4) mobAttack();
   }, [currentMob, stats, skillCooldowns, totalAtk, mobAttack]);
 
@@ -212,6 +233,18 @@ const App: React.FC = () => {
     );
   }
 
+  const buyVip = (type: keyof PlayerStats['vip'], cost: number) => {
+    const confirmed = confirm(`${cost} TON karşılığında bu özelliği 1 haftalık almak istiyor musunuz?`);
+    if (!confirmed) return;
+    setStats(prev => {
+      if (!prev) return null;
+      const nextVip = { ...prev.vip };
+      nextVip[type] = { active: true, expiresAt: Date.now() + WEEK_IN_MS };
+      return { ...prev, vip: nextVip };
+    });
+    showToast("VIP Aktif!");
+  };
+
   return (
     <div className="flex flex-col h-[100dvh] bg-[#020617] text-slate-200 overflow-hidden">
       {toast && <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[1000] bg-amber-600 text-black px-6 py-2 rounded-full text-[10px] font-black shadow-2xl">{toast}</div>}
@@ -230,7 +263,7 @@ const App: React.FC = () => {
                   <div key={key} className="bg-slate-900 p-4 rounded-2xl flex justify-between items-center border border-slate-800">
                     <div>
                       <div className="text-white text-xs font-bold">{pot.name}</div>
-                      <div className="text-[9px] text-slate-500">+{pot.heal} Can/Mana | Adet: {stats.potions[key as keyof PotionStats]}</div>
+                      <div className="text-[9px] text-slate-500">+{pot.heal} Can/Mana | Adet: {stats.potions[key.toLowerCase() as keyof PotionStats]}</div>
                     </div>
                     <div className="flex items-center gap-3">
                       <input type="number" min="1" max="999" value={shopQuantities[key] || 1} onChange={e => setShopQuantities({...shopQuantities, [key]: parseInt(e.target.value)})} className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs" />
@@ -238,7 +271,7 @@ const App: React.FC = () => {
                         const qty = shopQuantities[key] || 1;
                         const cost = pot.cost * qty;
                         if (stats.gold < cost) return showToast("Yetersiz Gold!");
-                        setStats(s => ({ ...s!, gold: s!.gold - cost, potions: { ...s!.potions, [key]: s!.potions[key as keyof PotionStats] + qty } }));
+                        setStats(s => ({ ...s!, gold: s!.gold - cost, potions: { ...s!.potions, [key.toLowerCase() as keyof PotionStats]: s!.potions[key.toLowerCase() as keyof PotionStats] + qty } }));
                         showToast(`${qty} adet satın alındı!`);
                       }} className="bg-amber-600 text-black text-[9px] font-black px-3 py-2 rounded-lg">{pot.cost * (shopQuantities[key] || 1)}G</button>
                     </div>
@@ -251,7 +284,21 @@ const App: React.FC = () => {
                 <div className="bg-indigo-900/40 p-6 rounded-3xl border-2 border-indigo-500/30 text-center">
                   <h3 className="text-white font-black italic">PREMIUM (3 TON)</h3>
                   <p className="text-[10px] text-slate-400 my-2">Oto Pot, 2.5x EXP & Drop. 1 Hafta geçerli.</p>
-                  <button onClick={() => showToast("TON Cüzdanı Bağlayın...")} className="bg-indigo-600 w-full py-3 rounded-xl font-black text-xs">SATIN AL</button>
+                  <button onClick={() => buyVip('premium', 3)} className="bg-indigo-600 w-full py-3 rounded-xl font-black text-xs">SATIN AL</button>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                    <div><div className="text-xs font-bold">Oto HP/MP</div><div className="text-[8px] text-slate-500">0.25 TON</div></div>
+                    <button onClick={() => buyVip('autoPotion', 0.25)} className="bg-amber-600 text-black px-3 py-1 rounded font-black text-[10px]">AL</button>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                    <div><div className="text-xs font-bold">2x EXP Rate</div><div className="text-[8px] text-slate-500">1 TON</div></div>
+                    <button onClick={() => buyVip('expBoost', 1)} className="bg-amber-600 text-black px-3 py-1 rounded font-black text-[10px]">AL</button>
+                  </div>
+                  <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-center">
+                    <div><div className="text-xs font-bold">2x Drop Rate</div><div className="text-[8px] text-slate-500">1 TON</div></div>
+                    <button onClick={() => buyVip('dropBoost', 1)} className="bg-amber-600 text-black px-3 py-1 rounded font-black text-[10px]">AL</button>
+                  </div>
                 </div>
               </div>
             )}
@@ -269,9 +316,9 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="relative h-40 w-full flex items-center justify-center cursor-pointer" onClick={() => useSkill(SRO_SKILLS[0])}>
-              {damagePops.map(p => <div key={p.id} className="absolute dmg-float font-black text-3xl italic" style={{left: p.x+'%', top: p.y+'%', color: p.color}}>{p.textValue}</div>)}
-              <img src={currentMob.img} className={`w-32 h-32 object-contain active:scale-95 ${currentMob.isBoss ? 'scale-150' : ''}`} />
+            <div className="relative h-40 w-full flex items-center justify-center" onClick={() => useSkill(SRO_SKILLS[0])}>
+              {damagePops.map(p => <div key={p.id} className="absolute dmg-float font-black text-3xl italic pointer-events-none" style={{left: p.x+'%', top: p.y+'%', color: p.color}}>{p.textValue}</div>)}
+              <img src={currentMob.img} className={`w-32 h-32 object-contain active:scale-95 transition-transform ${currentMob.isBoss ? 'scale-150' : ''}`} />
             </div>
 
             <div className="flex gap-2 w-full justify-center">
@@ -292,23 +339,22 @@ const App: React.FC = () => {
                 const unlocked = stats.unlockedSkills.includes(s.id);
                 const cd = !!skillCooldowns[s.id];
                 return (
-                  <button key={s.id} onClick={() => useSkill(s)} disabled={cd} className={`relative aspect-square rounded-xl border-2 flex flex-col items-center justify-center ${!unlocked ? 'bg-black/50 border-slate-800' : cd ? 'bg-black border-slate-900 opacity-40' : 'bg-slate-900 border-slate-700'}`}>
+                  <button key={s.id} onClick={() => useSkill(s)} className={`relative aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all ${!unlocked ? 'bg-black/50 border-slate-800' : cd ? 'bg-slate-800 border-slate-900' : 'bg-slate-900 border-slate-700 active:scale-90'}`}>
                     {unlocked ? <span className="text-xl">{s.icon}</span> : <span className="text-[8px] font-black text-amber-600">Lv.{s.unlockLvl}</span>}
-                    {cd && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-[9px] font-black">CD</div>}
+                    {cd && s.id !== 'normal' && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-[9px] font-black rounded-xl">CD</div>}
                   </button>
                 );
               })}
             </div>
           </div>
-        ) : <div className="text-amber-500 font-black animate-pulse">CANAVAR ARANIYOR...</div>}
+        ) : <div className="text-amber-500 font-black animate-pulse uppercase tracking-widest text-[10px]">Bölge Keşfediliyor...</div>}
       </main>
 
-      <footer className="h-20 bg-[#0f172a] border-t border-slate-800 grid grid-cols-5 gap-1 p-2 pb-4">
+      <footer className="h-20 bg-[#0f172a] border-t border-slate-800 grid grid-cols-4 gap-1 p-2 pb-4">
         <button onClick={() => setActiveTab('NPC')} className="flex flex-col items-center justify-center text-slate-500"><span className="text-lg">🏪</span><span className="text-[7px] font-bold">SHOP</span></button>
         <button onClick={() => setActiveTab('DNG')} className="flex flex-col items-center justify-center text-slate-500"><span className="text-lg">🏰</span><span className="text-[7px] font-bold">DNG</span></button>
         <button onClick={() => setActiveTab('VIP')} className="flex flex-col items-center justify-center text-amber-500"><span className="text-lg">⭐</span><span className="text-[7px] font-bold">VIP</span></button>
         <button onClick={() => setActiveTab('BAG')} className="flex flex-col items-center justify-center text-slate-500"><span className="text-lg">🎒</span><span className="text-[7px] font-bold">BAG</span></button>
-        <button onClick={() => setActiveTab('CREATE')} className="flex flex-col items-center justify-center text-slate-500"><span className="text-lg">⚙️</span><span className="text-[7px] font-bold">NEW</span></button>
       </footer>
     </div>
   );
