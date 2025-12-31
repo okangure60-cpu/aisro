@@ -1,5 +1,5 @@
 import { ActiveMob, BlueOption, Item, ItemRarity, ItemSlot, ItemType, PlayerStats } from '../types';
-import { degreeFromLevel, requiredLevelForDegree } from './sroDegree';
+import { degreeFromLevel, requiredLevelForDegree } from './sroDegree.ts';
 import { seededRandom } from './seededRng';
 
 type MobRank = 'NORMAL' | 'BOSS';
