@@ -84,7 +84,6 @@ export interface DungeonTemplate {
   waves: number;
   mobPool: string[];
   bossId: string;
-  goldReward: number;
   entryFee: number;
   specialDropRate: number;
   description: string;
