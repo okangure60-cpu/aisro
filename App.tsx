@@ -1,3 +1,11 @@
+window.addEventListener("error", (e) => {
+  alert("HATA: " + (e?.message || "Bilinmiyor"));
+});
+window.addEventListener("unhandledrejection", (e: any) => {
+  alert("PROMISE HATA: " + (e?.reason?.message || String(e?.reason)));
+});
+
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { StatusBar } from './components/StatusBar';
 import { PlayerStats, ActiveMob, DamagePop, Skill, DungeonTemplate, PotionStats, Item, ItemSlot } from './types';
