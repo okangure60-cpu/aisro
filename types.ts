@@ -3,17 +3,22 @@ export type ItemRarity = 'COMMON' | 'STAR' | 'MOON' | 'SUN';
 // ItemType: eşyanın genel kategorisi
 export type ItemType = 'WEAPON' | 'SHIELD' | 'ARMOR' | 'ACCESSORY';
 
-// Slot: SRO mantığı (6 armor + weapon/shield + accessory)
+// Slot: SRO mantığı (Weapon/Shield + 6 Armor + Takılar)
+// NOT: ACCESSORY slotu legacy olarak duruyor (eski itemler bozulmasın diye)
 export type ItemSlot =
   | 'WEAPON'
   | 'SHIELD'
-  | 'ACCESSORY'
   | 'HEAD'
   | 'SHOULDERS'
   | 'CHEST'
   | 'HANDS'
   | 'LEGS'
-  | 'FEET';
+  | 'FEET'
+  | 'NECKLACE'
+  | 'EARRING'
+  | 'RING1'
+  | 'RING2'
+  | 'ACCESSORY';
 
 export interface Item {
   id: string;
@@ -28,7 +33,7 @@ export interface Item {
   defBonus: number;
   hpBonus: number;
 
-  plus: number;        // ✅ + basma için
+  plus: number;        // + basma
   isEquipped: boolean;
 }
 
