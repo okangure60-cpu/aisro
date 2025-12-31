@@ -1,4 +1,3 @@
-
 import { MobTemplate, ItemRarity, Skill, DungeonTemplate } from './types';
 
 export const RARITY_COLORS: Record<ItemRarity, string> = {
