@@ -19,7 +19,7 @@ export interface Item {
   id: string;
   name: string;
   type: ItemType;
-  slot: ItemSlot;      // ✅ Equip kontrolü slot’a göre yapılacak
+  slot: ItemSlot;
   degree: number;
   rarity: ItemRarity;
   lvl: number;
@@ -28,6 +28,7 @@ export interface Item {
   defBonus: number;
   hpBonus: number;
 
+  plus: number;        // ✅ + basma için
   isEquipped: boolean;
 }
 
