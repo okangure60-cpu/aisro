@@ -15,23 +15,20 @@ export const StatusBar: React.FC<StatusBarProps> = ({ stats, totalAtk, totalDef 
   const mpPercent = (stats.mp / stats.maxMp) * 100;
   const xpPercent = (stats.xp / xpRequired) * 100;
 
-  const now = Date.now();
-
-  const isVip = !!(
-    (stats.vip?.premium?.active && stats.vip.premium.expiresAt > now) ||
-    (stats.vip?.autoPotion?.active && stats.vip.autoPotion.expiresAt > now) ||
-    (stats.vip?.expBoost?.active && stats.vip.expBoost.expiresAt > now) ||
-    (stats.vip?.dropBoost?.active && stats.vip.dropBoost.expiresAt > now)
-  );
+  const vipActive =
+    stats.vip?.premium?.active ||
+    stats.vip?.autoPotion?.active ||
+    stats.vip?.expBoost?.active ||
+    stats.vip?.dropBoost?.active;
 
   return (
     <div className="w-full bg-[#0f172a] border-b-2 border-amber-900/60 p-3 pt-4 flex flex-col gap-2 shadow-2xl relative z-50">
       <div className="flex justify-between items-center px-1">
-        {/* LEFT */}
         <div className="flex items-center gap-2.5">
           <div className="bg-gradient-to-br from-amber-400 to-amber-700 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded border border-amber-300/30">
             LVL {stats.lvl}
           </div>
+
           <div className="flex flex-col">
             <span className="text-white text-[10px] font-black uppercase leading-none">
               {stats.charName || 'YENİ SAVAŞÇI'}
@@ -42,14 +39,6 @@ export const StatusBar: React.FC<StatusBarProps> = ({ stats, totalAtk, totalDef 
           </div>
         </div>
 
-        {/* CENTER VIP */}
-        {isVip && (
-          <div className="px-3 py-1 rounded-full text-[9px] font-black bg-amber-500 text-black shadow-xl border border-amber-200/40">
-            VIP
-          </div>
-        )}
-
-        {/* RIGHT */}
         <div className="flex flex-col items-end">
           <span className="text-amber-400 text-xs font-black tracking-tighter">
             💰 {stats.gold.toLocaleString()}
@@ -57,23 +46,26 @@ export const StatusBar: React.FC<StatusBarProps> = ({ stats, totalAtk, totalDef 
         </div>
       </div>
 
+      {/* ✅ VIP badge ortada */}
+      {vipActive && (
+        <div className="w-full flex justify-center -mt-1">
+          <div className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-500/25 to-indigo-500/25 border border-amber-500/25 text-[8px] font-black tracking-[0.35em] text-amber-300 uppercase">
+            VIP
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-12 gap-2 items-center">
         <div className="col-span-8 space-y-1.5">
           <div className="h-3 w-full bg-black rounded border border-slate-800 relative overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all"
-              style={{ width: `${Math.max(0, hpPercent)}%` }}
-            />
+            <div className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all" style={{ width: `${Math.max(0, hpPercent)}%` }} />
             <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-white perspective-text">
               HP {Math.round(stats.hp)}
             </span>
           </div>
 
           <div className="h-3 w-full bg-black rounded border border-slate-800 relative overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-sky-800 to-sky-500 transition-all"
-              style={{ width: `${Math.max(0, mpPercent)}%` }}
-            />
+            <div className="h-full bg-gradient-to-r from-sky-800 to-sky-500 transition-all" style={{ width: `${Math.max(0, mpPercent)}%` }} />
             <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-white perspective-text">
               MP {Math.round(stats.mp)}
             </span>
@@ -93,10 +85,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({ stats, totalAtk, totalDef 
       </div>
 
       <div className="w-full h-1.5 bg-black rounded-full overflow-hidden border border-slate-900 mt-1">
-        <div
-          className="h-full bg-emerald-600 transition-all duration-1000"
-          style={{ width: `${Math.min(100, xpPercent)}%` }}
-        />
+        <div className="h-full bg-emerald-600 transition-all duration-1000" style={{ width: `${Math.min(100, xpPercent)}%` }} />
       </div>
     </div>
   );
