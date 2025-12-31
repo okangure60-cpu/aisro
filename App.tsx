@@ -4,7 +4,7 @@ import { StatusBar } from './components/StatusBar';
 import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, ItemType, Skill, PlayerDebuff, MobAbilityType, DungeonTemplate, MarketListing } from './types';
 import { SRO_MOBS, SRO_SKILLS, SRO_DUNGEONS, getXpRequired, RARITY_COLORS, POTION_CONFIG } from './constants';
 
-const STORAGE_KEY = 'sro_legend_journey_stats_v7';
+const STORAGE_KEY = 'sro_legend_journey_stats_v8';
 
 type ActiveTab = 'GAME' | 'BAG' | 'NPC' | 'DNG' | 'MARKET' | 'VIP';
 
@@ -75,6 +75,35 @@ const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const generateRandomItem = (lvl: number): Item => {
+    const types: ItemType[] = ['WEAPON', 'SHIELD', 'ARMOR', 'HELMET', 'ACCESSORY'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    // Rarity determination
+    const roll = Math.random();
+    let rarity: ItemRarity = 'COMMON';
+    let multiplier = 1;
+    let prefix = "";
+
+    if (roll < 0.02) { rarity = 'SUN'; multiplier = 3.5; prefix = "Seal of Sun "; }
+    else if (roll < 0.10) { rarity = 'MOON'; multiplier = 2.5; prefix = "Seal of Moon "; }
+    else if (roll < 0.30) { rarity = 'STAR'; multiplier = 1.8; prefix = "Seal of Star "; }
+    
+    const baseVal = lvl * 2 * multiplier;
+    
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      name: `${prefix}${type === 'WEAPON' ? 'Blade' : type === 'SHIELD' ? 'Shield' : 'Plate'}`,
+      type,
+      rarity,
+      lvl,
+      atkBonus: type === 'WEAPON' ? Math.floor(baseVal * 2.5) : 0,
+      defBonus: (type === 'ARMOR' || type === 'SHIELD' || type === 'HELMET') ? Math.floor(baseVal * 1.2) : 0,
+      hpBonus: (type === 'ACCESSORY' || type === 'HELMET') ? Math.floor(baseVal * 5) : 0,
+      isEquipped: false
+    };
+  };
+
   const spawnMob = useCallback(() => {
     let template;
     if (activeDungeon) {
@@ -136,14 +165,37 @@ const App: React.FC = () => {
       const newHp = prev.curHp - dmg;
       if (newHp <= 0) {
         const xpReward = (prev.lvl / 2);
-        setStats(s => {
-          let nx = s.xp + xpReward; let nl = s.lvl;
-          while (nx >= getXpRequired(nl)) { nx -= getXpRequired(nl); nl++; }
-          return {...s, lvl: nl, xp: nx, gold: s.gold + prev.goldReward};
-        });
+        
         if (activeDungeon) {
-          if (prev.isBoss) setActiveDungeon(null);
-          else setActiveDungeon(d => d ? ({...d, currentWave: d.currentWave+1}) : null);
+          if (prev.isBoss) {
+            // Check for item drop
+            const dropRoll = Math.random();
+            if (dropRoll < activeDungeon.template.specialDropRate) {
+              const newItem = generateRandomItem(stats.lvl);
+              setStats(s => ({
+                ...s,
+                inventory: [...s.inventory, newItem],
+                gold: s.gold + prev.goldReward
+              }));
+              addDamagePop("ITEM DROP!", RARITY_COLORS[newItem.rarity]);
+            } else {
+              setStats(s => ({...s, gold: s.gold + prev.goldReward}));
+            }
+            setActiveDungeon(null);
+          } else {
+            setStats(s => {
+                let nx = s.xp + xpReward; let nl = s.lvl;
+                while (nx >= getXpRequired(nl)) { nx -= getXpRequired(nl); nl++; }
+                return {...s, lvl: nl, xp: nx, gold: s.gold + prev.goldReward};
+            });
+            setActiveDungeon(d => d ? ({...d, currentWave: d.currentWave+1}) : null);
+          }
+        } else {
+          setStats(s => {
+            let nx = s.xp + xpReward; let nl = s.lvl;
+            while (nx >= getXpRequired(nl)) { nx -= getXpRequired(nl); nl++; }
+            return {...s, lvl: nl, xp: nx, gold: s.gold + prev.goldReward};
+          });
         }
         return null;
       }
@@ -151,7 +203,7 @@ const App: React.FC = () => {
     });
     
     if (Math.random() < 0.3) mobAttack();
-  }, [currentMob, isStunned, skillCooldowns, stats.mp, totalAtk, mobAttack, activeDungeon]);
+  }, [currentMob, isStunned, skillCooldowns, stats.mp, totalAtk, mobAttack, activeDungeon, stats.lvl]);
 
   const saveToTelegram = () => {
     if (tg?.sendData) {
@@ -162,13 +214,13 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-[#020617] text-slate-200">
       <div className="absolute top-0 left-0 z-[100] p-1 pointer-events-none">
-        <span className="text-[8px] font-mono text-slate-600">v1.0.1</span>
+        <span className="text-[8px] font-mono text-slate-600">v1.0.2</span>
       </div>
       <StatusBar stats={{...stats, maxHp: totalMaxHp}} totalAtk={totalAtk} totalDef={totalDef} />
       
       <div className={`fixed inset-0 z-[9999] bg-[#020617] flex flex-col p-6 transition-transform duration-300 ${activeTab === 'GAME' ? 'translate-y-full' : 'translate-y-0'}`}>
         <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-2">
-           <h2 className="text-xl font-black text-amber-500 italic uppercase">{activeTab}</h2>
+           <h2 className="text-xl font-black text-amber-500 italic uppercase">{activeTab === 'DNG' ? 'ZINDANLAR' : activeTab === 'BAG' ? 'ÇANTA' : activeTab}</h2>
            <button onClick={() => setActiveTab('GAME')} className="text-slate-400 text-3xl">✕</button>
         </div>
         <div className="flex-1 overflow-y-auto pb-24 custom-scrollbar">
@@ -176,12 +228,22 @@ const App: React.FC = () => {
              <div className="space-y-3">
                {stats.inventory.map(item => (
                  <div key={item.id} className={`bg-slate-900 border-2 p-4 rounded-2xl ${item.isEquipped ? 'border-amber-500' : 'border-slate-800'}`}>
-                    <span className="text-xs font-black" style={{color: RARITY_COLORS[item.rarity]}}>{item.name}</span>
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-xs font-black" style={{color: RARITY_COLORS[item.rarity]}}>{item.name} (Lv.{item.lvl})</span>
+                      <span className="text-[8px] font-bold text-slate-500">{item.type}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 text-[8px] text-slate-400 mb-2 italic">
+                       {item.atkBonus > 0 && <span>ATK +{item.atkBonus}</span>}
+                       {item.defBonus > 0 && <span>DEF +{item.defBonus}</span>}
+                       {item.hpBonus > 0 && <span>HP +{item.hpBonus}</span>}
+                    </div>
                     <button onClick={() => {
                       setStats(prev => ({
-                        ...prev, inventory: prev.inventory.map(i => i.id === item.id ? {...i, isEquipped: !i.isEquipped} : (i.type === item.type && !i.isEquipped ? i : {...i, isEquipped: false}))
+                        ...prev, inventory: prev.inventory.map(i => i.id === item.id ? {...i, isEquipped: !i.isEquipped} : (i.type === item.type && i.isEquipped ? {...i, isEquipped: false} : i))
                       }));
-                    }} className="w-full mt-3 py-2 bg-slate-800 rounded-xl font-bold text-[10px]">{item.isEquipped ? 'ÇIKAR' : 'KUŞAN'}</button>
+                    }} className={`w-full py-2 rounded-xl font-bold text-[10px] ${item.isEquipped ? 'bg-amber-600 text-black' : 'bg-slate-800 text-slate-300'}`}>
+                      {item.isEquipped ? 'ÇIKAR' : 'KUŞAN'}
+                    </button>
                  </div>
                ))}
                {stats.inventory.length === 0 && <div className="text-center text-slate-500 text-xs py-10 italic">Çantanız boş...</div>}
@@ -205,7 +267,10 @@ const App: React.FC = () => {
              <div className="space-y-4">
                {SRO_DUNGEONS.map(dng => (
                   <div key={dng.id} className="bg-slate-900 border-2 border-slate-800 p-6 rounded-3xl">
-                     <h3 className="text-amber-100 font-black text-sm mb-2">{dng.name} (Lv.{dng.minLvl})</h3>
+                     <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-amber-100 font-black text-sm">{dng.name} (Lv.{dng.minLvl})</h3>
+                        <span className="text-[9px] font-black text-emerald-500">DROP: %{Math.round(dng.specialDropRate * 100)}</span>
+                     </div>
                      <p className="text-slate-400 text-[10px] mb-4 leading-relaxed">{dng.description}</p>
                      <button onClick={() => {
                        if (stats.lvl >= dng.minLvl && stats.gold >= dng.entryFee) {
@@ -227,7 +292,7 @@ const App: React.FC = () => {
         {currentMob ? (
           <div className="flex flex-col items-center gap-8 w-full max-w-xs">
             <div className="bg-slate-900/90 border-2 border-slate-800 p-3 rounded-2xl w-full text-center relative overflow-hidden shadow-2xl">
-              {activeDungeon && <div className="absolute top-0 right-0 bg-amber-600 text-[7px] px-2 font-black text-black uppercase">Wave {activeDungeon.currentWave}/{activeDungeon.template.waves}</div>}
+              {activeDungeon && <div className="absolute top-0 right-0 bg-amber-600 text-[7px] px-2 font-black text-black uppercase">Dalga {activeDungeon.currentWave}/{activeDungeon.template.waves}</div>}
               <h2 className="text-[10px] font-black text-amber-200 uppercase tracking-widest">{currentMob.name} (Lv{currentMob.lvl})</h2>
               <div className="h-2 w-full bg-black rounded-full mt-2 overflow-hidden border border-slate-800">
                 <div className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all duration-300" style={{ width: `${(currentMob.curHp/currentMob.hp)*100}%` }} />
@@ -236,7 +301,7 @@ const App: React.FC = () => {
             
             <div className="relative h-44 w-full flex items-center justify-center cursor-crosshair" onClick={() => !isStunned && useSkill(SRO_SKILLS[0])}>
               {damagePops.map(pop => (
-                <div key={pop.id} className="absolute dmg-float font-black z-[60] text-3xl pointer-events-none perspective-text italic" style={{ left: `${pop.x}%`, top: `${pop.y}%`, color: pop.color }}>
+                <div key={pop.id} className="absolute dmg-float font-black z-[60] text-3xl pointer-events-none perspective-text italic text-center" style={{ left: `${pop.x}%`, top: `${pop.y}%`, color: pop.color }}>
                   {pop.textValue || pop.value}
                 </div>
               ))}
