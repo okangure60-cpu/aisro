@@ -1,6 +1,6 @@
 import { Item, ItemRarity, ItemSlot, ItemType } from '../types';
-import { degreeFromLevel } from './sroDegree.ts';
-import { createSeededRng, makeSeed } from './seededRng.ts';
+import { degreeFromLevel } from './sroDegree';
+import { createSeededRng, makeSeed } from './seededRng';
 
 type GenerateDropArgs = {
   mobLvl: number;
@@ -9,8 +9,6 @@ type GenerateDropArgs = {
   seed?: number;
 };
 
-// Slot havuzu: WEAPON / SHIELD / 6 armor / 4 takı
-// NOT: 'ACCESSORY' legacy slotu üretilmiyor (eski itemler için types'ta duruyor)
 const SLOT_POOL: ItemSlot[] = [
   'WEAPON', 'SHIELD',
   'HEAD', 'SHOULDERS', 'CHEST', 'HANDS', 'LEGS', 'FEET',
@@ -20,12 +18,7 @@ const SLOT_POOL: ItemSlot[] = [
 function typeFromSlot(slot: ItemSlot): ItemType {
   if (slot === 'WEAPON') return 'WEAPON';
   if (slot === 'SHIELD') return 'SHIELD';
-
-  // Takılar + legacy ACCESSORY => ItemType ACCESSORY
-  if (slot === 'NECKLACE' || slot === 'EARRING' || slot === 'RING1' || slot === 'RING2' || slot === 'ACCESSORY') {
-    return 'ACCESSORY';
-  }
-
+  if (slot === 'NECKLACE' || slot === 'EARRING' || slot === 'RING1' || slot === 'RING2') return 'ACCESSORY';
   return 'ARMOR';
 }
 
@@ -51,7 +44,6 @@ function slotDisplay(slot: ItemSlot) {
     case 'EARRING': return 'Earring';
     case 'RING1': return 'Ring';
     case 'RING2': return 'Ring';
-    case 'ACCESSORY': return 'Accessory'; // legacy
     default: return slot;
   }
 }
@@ -78,17 +70,19 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
   let atkBonus = 0;
   let defBonus = 0;
   let hpBonus = 0;
+  let critChance: number | undefined = undefined;
 
   if (slot === 'WEAPON') {
     atkBonus = Math.floor(baseStat * 1.6 * rarityMult);
+    // ✅ crit chance: rarity + degree etkisi (cap 25%)
+    const rarityAdd = rarity === 'SUN' ? 0.08 : rarity === 'MOON' ? 0.05 : rarity === 'STAR' ? 0.03 : 0.0;
+    critChance = Math.min(0.25, 0.03 + degree * 0.002 + rarityAdd);
   } else if (slot === 'SHIELD') {
     defBonus = Math.floor(baseStat * 1.3 * rarityMult);
     hpBonus = Math.floor(baseStat * 2.5 * rarityMult);
-  } else if (slot === 'NECKLACE' || slot === 'EARRING' || slot === 'RING1' || slot === 'RING2' || slot === 'ACCESSORY') {
-    // Takılar: HP ağırlıklı (istersen sonra ring/necklace ayrı ayrı oranları da yaparız)
+  } else if (type === 'ACCESSORY') {
     hpBonus = Math.floor(baseStat * 12 * rarityMult);
   } else {
-    // Armor parçaları
     defBonus = Math.floor(baseStat * 0.9 * rarityMult);
     hpBonus = Math.floor(baseStat * 6.5 * rarityMult);
   }
@@ -109,5 +103,6 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
     hpBonus,
     plus: 0,
     isEquipped: false,
+    ...(critChance !== undefined ? { critChance } : {}),
   };
 }
