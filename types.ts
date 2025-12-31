@@ -1,40 +1,32 @@
 export type ItemRarity = 'COMMON' | 'STAR' | 'MOON' | 'SUN';
 
-// SRO slot mantığı
-export type ArmorSlot = 'HELMET' | 'SHOULDER' | 'CHEST' | 'LEGS' | 'GLOVES' | 'BOOTS';
-export type AccessorySlot = 'RING' | 'EARRING' | 'NECKLACE';
-export type ItemSlot = 'WEAPON' | 'SHIELD' | ArmorSlot | AccessorySlot;
-
-// type daha genel, slot detay verir
+// ItemType: eşyanın genel kategorisi
 export type ItemType = 'WEAPON' | 'SHIELD' | 'ARMOR' | 'ACCESSORY';
 
-export interface BlueOption {
-  key: 'STR' | 'INT' | 'HP' | 'MP' | 'ATK' | 'DEF' | 'CRIT' | 'HIT';
-  value: number;
-}
+// Slot: SRO mantığı (6 armor + weapon/shield + accessory)
+export type ItemSlot =
+  | 'WEAPON'
+  | 'SHIELD'
+  | 'ACCESSORY'
+  | 'HEAD'
+  | 'SHOULDERS'
+  | 'CHEST'
+  | 'HANDS'
+  | 'LEGS'
+  | 'FEET';
 
 export interface Item {
   id: string;
   name: string;
-
   type: ItemType;
-  slot: ItemSlot;
-
+  slot: ItemSlot;      // ✅ Equip kontrolü slot’a göre yapılacak
   degree: number;
   rarity: ItemRarity;
+  lvl: number;
 
-  // SRO'da itemin kullanılma levelı
-  requiredLvl: number;
-
-  // senin oyun statlarına yansıyacak bonuslar (final)
   atkBonus: number;
   defBonus: number;
   hpBonus: number;
-
-  // SRO hissi
-  plus: number;
-  blues: BlueOption[];
-  seed: string;
 
   isEquipped: boolean;
 }
@@ -55,15 +47,20 @@ export interface PlayerStats {
   lvl: number;
   xp: number;
   gold: number;
+
   hp: number;
   maxHp: number;
+
   mp: number;
   maxMp: number;
+
   atk: number;
   def: number;
+
   inventory: Item[];
   potions: PotionStats;
   unlockedSkills: string[];
+
   vip: {
     autoPotion: VipFeature;
     expBoost: VipFeature;
