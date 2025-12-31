@@ -1,4 +1,3 @@
-
 export type ItemRarity = 'COMMON' | 'STAR' | 'MOON' | 'SUN';
 export type ItemType = 'WEAPON' | 'SHIELD' | 'ARMOR' | 'HELMET' | 'ACCESSORY';
 
@@ -6,6 +5,7 @@ export interface Item {
   id: string;
   name: string;
   type: ItemType;
+  degree: number;
   rarity: ItemRarity;
   lvl: number;
   atkBonus: number;
