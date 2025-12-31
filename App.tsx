@@ -18,37 +18,15 @@ const INITIAL_VIP: PlayerStats['vip'] = {
 
 const INITIAL_POTIONS: PotionStats = { hp_s: 10, hp_m: 0, hp_l: 0, mp_s: 10, mp_m: 0, mp_l: 0 };
 
-const ARMOR_SLOTS: ItemSlot[] = ['HEAD','SHOULDERS','CHEST','HANDS','LEGS','FEET'];
+const ARMOR_SLOTS: ItemSlot[] = ['HEAD', 'SHOULDERS', 'CHEST', 'HANDS', 'LEGS', 'FEET'];
 
-// ✅ BAG sıralama: WEAPON -> SHIELD -> ARMOR(6) -> Takılar -> legacy ACCESSORY
-const INVENTORY_SLOT_ORDER: ItemSlot[] = [
-  'WEAPON',
-  'SHIELD',
-  'HEAD', 'SHOULDERS', 'CHEST', 'HANDS', 'LEGS', 'FEET',
-  'NECKLACE', 'EARRING', 'RING1', 'RING2',
-  'ACCESSORY', // legacy (eski itemler bozulmasın diye en sonda)
-];
-
-const slotOrderIndex = (slot: ItemSlot) => {
-  const idx = INVENTORY_SLOT_ORDER.indexOf(slot);
-  return idx === -1 ? 999 : idx;
-};
-
-const rarityRank = (r: any) => {
-  // COMMON < STAR < MOON < SUN
-  if (r === 'SUN') return 4;
-  if (r === 'MOON') return 3;
-  if (r === 'STAR') return 2;
-  return 1;
-};
-
+// ✅ Random damage helper (±%10)
 const rollDamage = (base: number, spreadPct = 0.10) => {
   const min = 1 - spreadPct;
   const max = 1 + spreadPct;
   const r = min + Math.random() * (max - min);
   return Math.max(1, Math.floor(base * r));
 };
-
 
 const App: React.FC = () => {
   const [stats, setStats] = useState<PlayerStats | null>(() => {
@@ -69,6 +47,8 @@ const App: React.FC = () => {
   const [activeDungeon, setActiveDungeon] = useState<{ template: DungeonTemplate, currentWave: number } | null>(null);
   const [skillCooldowns, setSkillCooldowns] = useState<Record<string, number>>({});
   const [toast, setToast] = useState<string | null>(null);
+
+  // ✅ Potion shop quantity fix: string tutuyoruz (silinebilir)
   const [shopQuantities, setShopQuantities] = useState<Record<string, string>>({});
 
   // Enhance UI
@@ -88,26 +68,30 @@ const App: React.FC = () => {
     setTimeout(() => setToast(null), 2500);
   };
 
+  const addDamagePop = (value: number | string, color: string) => {
+    const id = nextPopId.current++;
+    setDamagePops(prev => [...prev, { id, value: 0, textValue: String(value), color, x: 30 + Math.random() * 40, y: 20 + Math.random() * 40 }]);
+    setTimeout(() => setDamagePops(prev => prev.filter(p => p.id !== id)), 800);
+  };
+
   const equippedItems = useMemo(() => (stats?.inventory || []).filter(i => i.isEquipped), [stats]);
+
+  // ✅ Weapon crit chance (silah varsa)
+  const weaponCritChance = useMemo(() => {
+    const w = equippedItems.find(i => i.slot === 'WEAPON');
+    if (!w) return 0;
+
+    let chance = 0.05 + Math.min(15, w.plus) * 0.01; // %5 + her + için %1
+    if (w.rarity === 'STAR') chance += 0.02;
+    if (w.rarity === 'MOON') chance += 0.04;
+    if (w.rarity === 'SUN')  chance += 0.07;
+    return Math.min(0.35, chance);
+  }, [equippedItems]);
 
   // + scaling (MVP): her + için item bonusları %8 artıyor
   const scaledBonuses = useMemo(() => {
     let gearAtk = 0, gearDef = 0, gearHp = 0;
     for (const it of equippedItems) {
-      const weaponCritChance = useMemo(() => {
-  const w = equippedItems.find(i => i.slot === 'WEAPON');
-  if (!w) return 0;
-
-  let chance = 0.05 + Math.min(15, w.plus) * 0.01; // %5 + her + için %1
-
-  if (w.rarity === 'STAR') chance += 0.02;
-  if (w.rarity === 'MOON') chance += 0.04;
-  if (w.rarity === 'SUN')  chance += 0.07;
-
-  // üst limit (abartmasın)
-  return Math.min(0.35, chance); // max %35
-
-
       const mult = 1 + Math.min(15, it.plus) * 0.08;
       gearAtk += Math.floor(it.atkBonus * mult);
       gearDef += Math.floor(it.defBonus * mult);
@@ -132,9 +116,6 @@ const App: React.FC = () => {
     const rarities = ARMOR_SLOTS.map(s => armorEquipped.find(i => i.slot === s)!.rarity);
     const sameRarity = rarities.every(r => r === rarities[0]);
 
-    // Bonuslar: full set -> +%5 def, +%8 hp
-    // aynı degree -> ekstra +%7 def, +%10 hp
-    // aynı rarity -> ekstra +%5 def, +%5 hp
     let defPct = 0.05, hpPct = 0.08;
     let label = 'Full Set';
 
@@ -275,18 +256,17 @@ const App: React.FC = () => {
     addDamagePop(`+${config.heal}`, id.startsWith('hp') ? '#22c55e' : '#0ea5e9');
   };
 
-  const addDamagePop = (value: number | string, color: string) => {
-    const id = nextPopId.current++;
-    setDamagePops(prev => [...prev, { id, value: 0, textValue: String(value), color, x: 30 + Math.random() * 40, y: 20 + Math.random() * 40 }]);
-    setTimeout(() => setDamagePops(prev => prev.filter(p => p.id !== id)), 800);
-  };
-
+  // ✅ Mob attack: random (±%10)
   const mobAttack = useCallback(() => {
     if (!currentMob) return;
     setIsHurt(true);
     setTimeout(() => setIsHurt(false), 200);
-    const dmg = Math.max(5, Math.floor(currentMob.atk - totalDef / 4));
+
+    const base = Math.max(5, currentMob.atk - totalDef / 4);
+    const dmg = rollDamage(base, 0.10);
+
     addDamagePop(dmg, '#ef4444');
+
     setStats(prev => {
       if (!prev) return null;
       const newHp = prev.hp - dmg;
@@ -316,19 +296,17 @@ const App: React.FC = () => {
     setStats(prev => ({ ...prev!, mp: prev!.mp - skill.mpCost }));
     setSkillCooldowns(prev => ({ ...prev, [skill.id]: Date.now() + skill.cooldown }));
 
-  const base = totalAtk * skill.damageMultiplier;
+    // ✅ Player damage random + crit
+    const base = totalAtk * skill.damageMultiplier;
+    const isCrit = Math.random() < weaponCritChance;
+    const critMult = 1.8;
+    const finalBase = isCrit ? base * critMult : base;
 
-  const isCrit = Math.random() < weaponCritChance;
-  const critMult = 1.8; // SRO hissi: 1.8 iyi
-  const finalBase = isCrit ? base * critMult : base;
+    const dmg = rollDamage(finalBase, 0.10);
 
-  const dmg = rollDamage(finalBase, 0.10);
-
-  if (isCrit) {
-    addDamagePop('CRIT!', '#facc15'); // sarı
-  }
-  addDamagePop(dmg, skill.color);
-
+    // ✅ tek pop: CRIT 1234 (sarı)
+    if (isCrit) addDamagePop(`CRIT ${dmg}`, '#facc15');
+    else addDamagePop(dmg, skill.color);
 
     setCurrentMob(prev => {
       if (!prev) return null;
@@ -345,6 +323,7 @@ const App: React.FC = () => {
 
         setStats(s => {
           if (!s) return null;
+
           let nx = s.xp + xp;
           let nl = s.lvl;
 
@@ -353,35 +332,33 @@ const App: React.FC = () => {
           let baseMaxHp = s.maxHp;
           let baseMaxMp = s.maxMp;
 
-        while (nx >= getXpRequired(nl) && nl < 140) {
-          nx -= getXpRequired(nl);
-          nl++;
+          // ✅ LEVEL UP: base stat artışı
+          while (nx >= getXpRequired(nl) && nl < 140) {
+            nx -= getXpRequired(nl);
+            nl++;
 
-        // ✅ Level up stat artışları (MVP ayar)
-        baseAtk += 2;
-        baseDef += 1;
-        baseMaxHp += 20;
-        baseMaxMp += 10;
-    }
+            baseAtk += 2;
+            baseDef += 1;
+            baseMaxHp += 20;
+            baseMaxMp += 10;
+          }
 
-const newInv = [...s.inventory];
-if (drop) { newInv.push(drop); showToast(`${drop.name} düştü!`); }
+          const newInv = [...s.inventory];
+          if (drop) { newInv.push(drop); showToast(`${drop.name} düştü!`); }
 
-return {
-  ...s,
-  xp: nx,
-  lvl: nl,
-  atk: baseAtk,
-  def: baseDef,
-  maxHp: baseMaxHp,
-  maxMp: baseMaxMp,
-  // can/mana taşmasın (istersen level-up'ta full da yapabiliriz)
-  hp: Math.min(s.hp, baseMaxHp),
-  mp: Math.min(s.mp, baseMaxMp),
-  gold: s.gold + prev.goldReward,
-  inventory: newInv
-};
-
+          return {
+            ...s,
+            xp: nx,
+            lvl: nl,
+            atk: baseAtk,
+            def: baseDef,
+            maxHp: baseMaxHp,
+            maxMp: baseMaxMp,
+            hp: Math.min(s.hp, baseMaxHp),
+            mp: Math.min(s.mp, baseMaxMp),
+            gold: s.gold + prev.goldReward,
+            inventory: newInv
+          };
         });
 
         if (activeDungeon) {
@@ -398,7 +375,7 @@ return {
     });
 
     if (Math.random() < 0.4) mobAttack();
-  }, [currentMob, stats, skillCooldowns, totalAtk, mobAttack, activeDungeon]);
+  }, [currentMob, stats, skillCooldowns, totalAtk, mobAttack, activeDungeon, weaponCritChance]);
 
   const startDungeon = (dng: DungeonTemplate) => {
     if (!stats) return;
@@ -444,7 +421,6 @@ return {
 
         if (ok) return { ...it, plus: it.plus + 1 };
 
-        // fail: +5 üstünde düşür (MVP SRO hissi)
         const newPlus = it.plus >= 5 ? Math.max(0, it.plus - 1) : it.plus;
         return { ...it, plus: newPlus };
       });
@@ -468,7 +444,23 @@ return {
           </div>
           <button onClick={() => {
             if (tempName.length < 3) return showToast("İsim çok kısa!");
-            setStats({ charName: tempName, build: tempBuild, lvl: 1, xp: 0, gold: 0, hp: 300, maxHp: 300, mp: 200, maxMp: 200, atk: 25, def: 12, inventory: [], potions: INITIAL_POTIONS, unlockedSkills: ['normal'], vip: INITIAL_VIP });
+            setStats({
+              charName: tempName,
+              build: tempBuild,
+              lvl: 1,
+              xp: 0,
+              gold: 0,
+              hp: 300,
+              maxHp: 300,
+              mp: 200,
+              maxMp: 200,
+              atk: 25,
+              def: 12,
+              inventory: [],
+              potions: INITIAL_POTIONS,
+              unlockedSkills: ['normal'],
+              vip: INITIAL_VIP
+            });
             setActiveTab('GAME');
           }} className="w-full bg-amber-600 py-4 rounded-2xl font-black text-black shadow-xl">BAŞLA</button>
         </div>
@@ -488,61 +480,7 @@ return {
     showToast("VIP Aktif!");
   };
 
-  // ✅ Enhance dropdown'u da slot sırasına göre şık dursun (reverse değil)
-  const invForEnhance = useMemo(() => {
-    const copy = [...stats.inventory];
-    copy.sort((a, b) => {
-      const so = slotOrderIndex(a.slot) - slotOrderIndex(b.slot);
-      if (so !== 0) return so;
-
-      // Equipped önce
-      if (a.isEquipped !== b.isEquipped) return a.isEquipped ? -1 : 1;
-
-      // Degree desc
-      if (a.degree !== b.degree) return b.degree - a.degree;
-
-      // Rarity desc
-      const rr = rarityRank(b.rarity) - rarityRank(a.rarity);
-      if (rr !== 0) return rr;
-
-      // Plus desc
-      if (a.plus !== b.plus) return b.plus - a.plus;
-
-      // Lvl desc
-      if (a.lvl !== b.lvl) return b.lvl - a.lvl;
-
-      return a.name.localeCompare(b.name);
-    });
-    return copy;
-  }, [stats.inventory]);
-
-  // ✅ BAG listesi: slot order + içeride güzel sıralama
-  const invForBag = useMemo(() => {
-    const copy = [...stats.inventory];
-    copy.sort((a, b) => {
-      const so = slotOrderIndex(a.slot) - slotOrderIndex(b.slot);
-      if (so !== 0) return so;
-
-      // Slot içinde: equipped önce
-      if (a.isEquipped !== b.isEquipped) return a.isEquipped ? -1 : 1;
-
-      // Degree desc
-      if (a.degree !== b.degree) return b.degree - a.degree;
-
-      // Rarity desc
-      const rr = rarityRank(b.rarity) - rarityRank(a.rarity);
-      if (rr !== 0) return rr;
-
-      // Plus desc
-      if (a.plus !== b.plus) return b.plus - a.plus;
-
-      // Lvl desc
-      if (a.lvl !== b.lvl) return b.lvl - a.lvl;
-
-      return a.name.localeCompare(b.name);
-    });
-    return copy;
-  }, [stats.inventory]);
+  const invForEnhance = stats.inventory.slice().reverse();
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#020617] text-slate-200 overflow-hidden">
@@ -643,19 +581,20 @@ return {
                             <div className="text-white text-xs font-bold">{pot.name}</div>
                             <div className="text-[9px] text-slate-500">+{pot.heal} | Adet: {stats.potions[key.toLowerCase() as keyof PotionStats]}</div>
                           </div>
+
                           <div className="flex items-center gap-3">
                             <input
-  type="number"
-  min={1}
-  max={999}
-  value={qtyStr}
-  onFocus={(e) => e.currentTarget.select()} // ✅ tıklayınca komple seç
-  onChange={(e) => {
-    const v = e.target.value; // '' olabilir
-    setShopQuantities(prev => ({ ...prev, [key]: v }));
-  }}
-  className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs"
-/>
+                              type="number"
+                              min={1}
+                              max={999}
+                              value={qtyStr}
+                              onFocus={(e) => e.currentTarget.select()}
+                              onChange={(e) => {
+                                const v = e.target.value; // '' olabilir
+                                setShopQuantities(prev => ({ ...prev, [key]: v }));
+                              }}
+                              className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs"
+                            />
 
                             <button onClick={() => {
                               if (stats.gold < currentCost) return showToast("Yetersiz Gold!");
@@ -665,7 +604,9 @@ return {
                                 potions: { ...s!.potions, [key.toLowerCase() as keyof PotionStats]: s!.potions[key.toLowerCase() as keyof PotionStats] + qty }
                               }));
                               showToast(`${qty} adet satın alındı!`);
-                            }} className="bg-amber-600 text-black text-[9px] font-black px-3 py-2 rounded-lg">{currentCost.toLocaleString()}G</button>
+                            }} className="bg-amber-600 text-black text-[9px] font-black px-3 py-2 rounded-lg">
+                              {currentCost.toLocaleString()}G
+                            </button>
                           </div>
                         </div>
                       );
@@ -722,13 +663,13 @@ return {
               </div>
             )}
 
-            {/* ✅ BAG: sıralı inventory */}
+            {/* ✅ BAG: Equip + Sell */}
             {activeTab === 'BAG' && (
               <div className="grid grid-cols-1 gap-3 pb-8">
                 {stats.inventory.length === 0 ? (
                   <div className="text-center text-slate-500 mt-20 text-xs">Çantan henüz boş.</div>
                 ) : (
-                  invForBag.map(item => (
+                  stats.inventory.slice().reverse().map(item => (
                     <div key={item.id} className={`bg-slate-900/50 border-2 rounded-2xl p-4 flex justify-between items-center transition-all ${item.isEquipped ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800'}`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
