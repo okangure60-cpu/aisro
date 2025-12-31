@@ -22,7 +22,10 @@ export const StatusBar: React.FC<StatusBarProps> = ({ stats, totalAtk, totalDef 
           <div className="bg-gradient-to-br from-amber-400 to-amber-700 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded border border-amber-300/30">
             LVL {stats.lvl}
           </div>
-          <span className="text-amber-100 text-xs font-black tracking-widest italic uppercase">SAVAŞÇI</span>
+          <div className="flex flex-col">
+            <span className="text-white text-[10px] font-black uppercase leading-none">{stats.charName || 'YENİ SAVAŞÇI'}</span>
+            <span className="text-amber-400 text-[8px] font-bold tracking-widest uppercase">{stats.build || 'Bilinmiyor'}</span>
+          </div>
         </div>
         <div className="flex flex-col items-end">
              <span className="text-amber-400 text-xs font-black tracking-tighter">💰 {stats.gold.toLocaleString()}</span>
