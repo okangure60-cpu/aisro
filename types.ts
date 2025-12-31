@@ -42,7 +42,14 @@ export interface MobAbility {
   cooldown: number;
 }
 
+export interface VipFeature {
+  active: boolean;
+  expiresAt: number;
+}
+
 export interface PlayerStats {
+  charName: string;
+  build: string;
   lvl: number;
   xp: number;
   gold: number;
@@ -58,8 +65,12 @@ export interface PlayerStats {
     mp: number;
   };
   unlockedSkills: string[];
-  isPremium?: boolean;
-  autoPotionEnabled?: boolean;
+  vip: {
+    autoPotion: VipFeature;
+    expBoost: VipFeature;
+    dropBoost: VipFeature;
+    premium: VipFeature;
+  };
 }
 
 export interface PlayerDebuff {
