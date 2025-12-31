@@ -19,7 +19,7 @@ const App: React.FC = () => {
       } catch (e) { console.warn(e); }
     }
     return {
-      lvl: 1, xp: 0, gold: 15000, hp: 300, maxHp: 300, mp: 200, maxMp: 200, atk: 25, def: 12,
+      lvl: 1, xp: 0, gold: 0, hp: 300, maxHp: 300, mp: 200, maxMp: 200, atk: 25, def: 12,
       inventory: [], potions: { hp: 10, mp: 10 }, isPremium: false, autoPotionEnabled: false
     };
   });
@@ -48,7 +48,10 @@ const App: React.FC = () => {
     }
   }, [tg]);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); }, [stats]);
+  // Otomatik Kayıt: Her stats değişiminde localStorage'a yazar
+  useEffect(() => { 
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); 
+  }, [stats]);
 
   const equippedItems = useMemo(() => stats.inventory.filter(i => i.isEquipped), [stats.inventory]);
   const bonusAtk = useMemo(() => equippedItems.reduce((s, i) => s + i.atkBonus, 0), [equippedItems]);
@@ -79,7 +82,6 @@ const App: React.FC = () => {
     const types: ItemType[] = ['WEAPON', 'SHIELD', 'ARMOR', 'HELMET', 'ACCESSORY'];
     const type = types[Math.floor(Math.random() * types.length)];
     
-    // Rarity determination
     const roll = Math.random();
     let rarity: ItemRarity = 'COMMON';
     let multiplier = 1;
@@ -134,6 +136,17 @@ const App: React.FC = () => {
     setTimeout(() => { setDamagePops(prev => prev.filter(p => p.id !== id)); }, 800);
   };
 
+  const usePotion = (type: 'hp' | 'mp') => {
+    if (stats.potions[type] <= 0) return;
+    const config = type === 'hp' ? POTION_CONFIG.HP_POTION : POTION_CONFIG.MP_POTION;
+    setStats(prev => ({
+      ...prev,
+      [type]: Math.min(type === 'hp' ? totalMaxHp : prev.maxMp, prev[type] + config.heal),
+      potions: { ...prev.potions, [type]: prev.potions[type] - 1 }
+    }));
+    addDamagePop(`+${config.heal}`, type === 'hp' ? '#22c55e' : '#0ea5e9');
+  };
+
   const mobAttack = useCallback(() => {
     if (!currentMob) return;
     setIsHurt(true);
@@ -151,11 +164,12 @@ const App: React.FC = () => {
   }, [currentMob, totalDef, totalMaxHp]);
 
   const useSkill = useCallback((skill: Skill) => {
-    if (!currentMob || isStunned || (skillCooldowns[skill.id] && skill.id !== 'normal')) return;
+    if (!currentMob || isStunned || skillCooldowns[skill.id]) return;
     if (stats.mp < skill.mpCost) { addDamagePop("MP!", "#0ea5e9"); return; }
     
     setStats(prev => ({ ...prev, mp: prev.mp - skill.mpCost }));
-    if (skill.id !== 'normal') setSkillCooldowns(prev => ({ ...prev, [skill.id]: Date.now() + skill.cooldown }));
+    // Bekleme süresini başlat (Normal vuruş dahil)
+    setSkillCooldowns(prev => ({ ...prev, [skill.id]: Date.now() + skill.cooldown }));
     
     const dmg = Math.floor(totalAtk * skill.damageMultiplier * (Math.random() < 0.1 ? 2.0 : 1.0));
     addDamagePop(dmg, skill.color);
@@ -164,11 +178,12 @@ const App: React.FC = () => {
       if (!prev) return null;
       const newHp = prev.curHp - dmg;
       if (newHp <= 0) {
-        const xpReward = (prev.lvl / 2);
+        // Zindanda ise 2x XP
+        const xpMultiplier = activeDungeon ? 2 : 1;
+        const xpReward = (prev.lvl / 2) * xpMultiplier;
         
         if (activeDungeon) {
           if (prev.isBoss) {
-            // Check for item drop
             const dropRoll = Math.random();
             if (dropRoll < activeDungeon.template.specialDropRate) {
               const newItem = generateRandomItem(stats.lvl);
@@ -205,16 +220,10 @@ const App: React.FC = () => {
     if (Math.random() < 0.3) mobAttack();
   }, [currentMob, isStunned, skillCooldowns, stats.mp, totalAtk, mobAttack, activeDungeon, stats.lvl]);
 
-  const saveToTelegram = () => {
-    if (tg?.sendData) {
-      tg.sendData(JSON.stringify(stats));
-    }
-  };
-
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-[#020617] text-slate-200">
       <div className="absolute top-0 left-0 z-[100] p-1 pointer-events-none">
-        <span className="text-[8px] font-mono text-slate-600">v1.0.2</span>
+        <span className="text-[8px] font-mono text-slate-600">v1.0.3</span>
       </div>
       <StatusBar stats={{...stats, maxHp: totalMaxHp}} totalAtk={totalAtk} totalDef={totalDef} />
       
@@ -247,7 +256,6 @@ const App: React.FC = () => {
                  </div>
                ))}
                {stats.inventory.length === 0 && <div className="text-center text-slate-500 text-xs py-10 italic">Çantanız boş...</div>}
-               <button onClick={saveToTelegram} className="w-full bg-emerald-600 text-black py-4 rounded-2xl font-black text-xs shadow-xl mt-4">💾 KAYDET VE ÇIK</button>
              </div>
            )}
            {activeTab === 'NPC' && (
@@ -269,7 +277,7 @@ const App: React.FC = () => {
                   <div key={dng.id} className="bg-slate-900 border-2 border-slate-800 p-6 rounded-3xl">
                      <div className="flex justify-between items-center mb-2">
                         <h3 className="text-amber-100 font-black text-sm">{dng.name} (Lv.{dng.minLvl})</h3>
-                        <span className="text-[9px] font-black text-emerald-500">DROP: %{Math.round(dng.specialDropRate * 100)}</span>
+                        <span className="text-[9px] font-black text-emerald-500">XP: x2 | DROP: %{Math.round(dng.specialDropRate * 100)}</span>
                      </div>
                      <p className="text-slate-400 text-[10px] mb-4 leading-relaxed">{dng.description}</p>
                      <button onClick={() => {
@@ -290,7 +298,7 @@ const App: React.FC = () => {
 
       <main className={`flex-1 flex flex-col items-center justify-center p-6 relative ${isHurt ? 'hit-shake bg-red-950/10' : ''}`}>
         {currentMob ? (
-          <div className="flex flex-col items-center gap-8 w-full max-w-xs">
+          <div className="flex flex-col items-center gap-6 w-full max-w-xs">
             <div className="bg-slate-900/90 border-2 border-slate-800 p-3 rounded-2xl w-full text-center relative overflow-hidden shadow-2xl">
               {activeDungeon && <div className="absolute top-0 right-0 bg-amber-600 text-[7px] px-2 font-black text-black uppercase">Dalga {activeDungeon.currentWave}/{activeDungeon.template.waves}</div>}
               <h2 className="text-[10px] font-black text-amber-200 uppercase tracking-widest">{currentMob.name} (Lv{currentMob.lvl})</h2>
@@ -306,6 +314,18 @@ const App: React.FC = () => {
                 </div>
               ))}
               <img src={currentMob.img} className={`w-40 h-40 object-contain transition-all duration-75 active:scale-90 ${currentMob.isBoss ? 'scale-125 brightness-125 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]' : ''}`} />
+            </div>
+
+            {/* Hızlı Potion Butonları */}
+            <div className="flex gap-4 w-full justify-center -mb-2">
+              <button onClick={() => usePotion('hp')} className="bg-red-900/40 border border-red-500/50 px-3 py-1.5 rounded-xl flex items-center gap-2 active:scale-95">
+                <span className="text-lg">🧪</span>
+                <span className="text-[10px] font-black text-red-200">{stats.potions.hp}</span>
+              </button>
+              <button onClick={() => usePotion('mp')} className="bg-sky-900/40 border border-sky-500/50 px-3 py-1.5 rounded-xl flex items-center gap-2 active:scale-95">
+                <span className="text-lg">🧪</span>
+                <span className="text-[10px] font-black text-sky-200">{stats.potions.mp}</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-4 gap-3 w-full">
