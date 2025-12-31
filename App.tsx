@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { StatusBar } from './components/StatusBar';
-import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, Skill, DungeonTemplate, PotionStats } from './types';
+import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, ItemType, Skill, DungeonTemplate, PotionStats } from './types';
 import { SRO_MOBS, SRO_SKILLS, SRO_DUNGEONS, getXpRequired, RARITY_COLORS, POTION_TIERS } from './constants';
 
-const STORAGE_KEY = 'sro_v11_stable';
+const STORAGE_KEY = 'sro_v12_degree_system';
 const WEEK_IN_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ActiveTab = 'GAME' | 'BAG' | 'NPC' | 'DNG' | 'VIP' | 'CREATE';
@@ -70,6 +70,77 @@ const App: React.FC = () => {
     return stats.def + bonus;
   }, [stats]);
 
+  // --- ITEM DROP LOGIC ---
+  const generateItem = useCallback((mobLvl: number, isBoss: boolean = false): Item | null => {
+    // Drop Rates
+    const baseRate = isBoss ? 0.8 : 0.12; // %12 Normal, %80 Boss
+    if (Math.random() > baseRate) return null;
+
+    const roll = Math.random();
+    let rarity: ItemRarity = 'COMMON';
+    let rarityMult = 1;
+
+    if (roll < 0.002) { rarity = 'SUN'; rarityMult = 2.5; }
+    else if (roll < 0.01) { rarity = 'MOON'; rarityMult = 1.8; }
+    else if (roll < 0.05) { rarity = 'STAR'; rarityMult = 1.4; }
+
+    const types: ItemType[] = ['WEAPON', 'SHIELD', 'ARMOR', 'HELMET', 'ACCESSORY'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    // Degree calculation: SRO style roughly every 8-9 levels
+    const degree = Math.max(1, Math.min(15, Math.ceil(mobLvl / 9)));
+    
+    const baseStat = degree * 15;
+    let atkBonus = 0, defBonus = 0, hpBonus = 0;
+
+    if (type === 'WEAPON') atkBonus = Math.floor(baseStat * 1.5 * rarityMult);
+    else if (type === 'SHIELD') defBonus = Math.floor(baseStat * 1.2 * rarityMult);
+    else if (type === 'ARMOR' || type === 'HELMET') {
+      defBonus = Math.floor(baseStat * 0.8 * rarityMult);
+      hpBonus = Math.floor(baseStat * 5 * rarityMult);
+    } else {
+      hpBonus = Math.floor(baseStat * 12 * rarityMult);
+    }
+
+    const rarityPrefix = rarity !== 'COMMON' ? `[${rarity}] ` : '';
+    const name = `${rarityPrefix}D${degree} ${type.charAt(0) + type.slice(1).toLowerCase()}`;
+
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      name,
+      type,
+      degree,
+      rarity,
+      lvl: mobLvl,
+      atkBonus,
+      defBonus,
+      hpBonus,
+      isEquipped: false
+    };
+  }, []);
+
+  const handleEquip = (itemId: string) => {
+    setStats(prev => {
+      if (!prev) return null;
+      const item = prev.inventory.find(i => i.id === itemId);
+      if (!item) return prev;
+
+      const newInventory = prev.inventory.map(i => {
+        // Aynı tipteki diğer eşyayı çıkar
+        if (i.type === item.type && i.id !== itemId) {
+          return { ...i, isEquipped: false };
+        }
+        // Seçilen eşyayı giy/çıkar
+        if (i.id === itemId) {
+          return { ...i, isEquipped: !i.isEquipped };
+        }
+        return i;
+      });
+
+      return { ...prev, inventory: newInventory };
+    });
+  };
+
   // Mob Spawning
   const spawnMob = useCallback(() => {
     if (!stats) return;
@@ -85,7 +156,6 @@ const App: React.FC = () => {
       if (!template) template = SRO_MOBS[0];
       setCurrentMob({ ...template, curHp: template.hp, lastAbilityTime: {}, isBoss });
     } else {
-      // Find mobs near player level (within 5 levels)
       const validMobs = SRO_MOBS.filter(m => Math.abs(m.lvl - stats.lvl) <= 5);
       template = validMobs[Math.floor(Math.random() * validMobs.length)] || SRO_MOBS[0];
       setCurrentMob({ ...template, curHp: template.hp, lastAbilityTime: {} });
@@ -208,10 +278,22 @@ const App: React.FC = () => {
         const xpMult = stats.vip.premium.active ? 2.5 : stats.vip.expBoost.active ? 2 : 1;
         const xp = Math.floor(prev.xpReward * xpMult);
         
+        // --- DROP SYSTEM TRIGGER ---
+        const drop = generateItem(prev.lvl, prev.isBoss);
+
         setStats(s => {
-          let nx = s!.xp + xp; let nl = s!.lvl;
+          if (!s) return null;
+          let nx = s.xp + xp; 
+          let nl = s.lvl;
           while (nx >= getXpRequired(nl) && nl < 140) { nx -= getXpRequired(nl); nl++; }
-          return { ...s!, xp: nx, lvl: nl, gold: s!.gold + prev.goldReward };
+          
+          const newInv = [...s.inventory];
+          if (drop) {
+            newInv.push(drop);
+            showToast(`${drop.name} düştü!`);
+          }
+
+          return { ...s, xp: nx, lvl: nl, gold: s.gold + prev.goldReward, inventory: newInv };
         });
 
         if (activeDungeon) {
@@ -228,7 +310,7 @@ const App: React.FC = () => {
     });
     
     if (Math.random() < 0.4) mobAttack();
-  }, [currentMob, stats, skillCooldowns, totalAtk, mobAttack, activeDungeon]);
+  }, [currentMob, stats, skillCooldowns, totalAtk, mobAttack, activeDungeon, generateItem]);
 
   const startDungeon = (dng: DungeonTemplate) => {
     if (!stats) return;
@@ -238,7 +320,7 @@ const App: React.FC = () => {
     setStats(prev => ({ ...prev!, gold: prev!.gold - dng.entryFee }));
     setActiveDungeon({ template: dng, currentWave: 1 });
     setActiveTab('GAME');
-    setCurrentMob(null); // Force respawn in GAME tab
+    setCurrentMob(null); 
     showToast(`${dng.name} bölgesine girildi!`);
   };
 
@@ -290,7 +372,6 @@ const App: React.FC = () => {
             {activeTab === 'NPC' && (
               <div className="grid grid-cols-1 gap-3">
                 {Object.entries(POTION_TIERS).map(([key, pot]) => {
-                  /* Fix: Calculate quantity and cost within the map scope so 'cost' is available for rendering the label */
                   const qty = shopQuantities[key] || 1;
                   const currentCost = pot.cost * qty;
                   return (
@@ -310,6 +391,32 @@ const App: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {activeTab === 'BAG' && (
+              <div className="grid grid-cols-1 gap-3 pb-8">
+                {stats.inventory.length === 0 ? (
+                  <div className="text-center text-slate-500 mt-20 text-xs">Çantan henüz boş. Canavar avlayarak eşya topla!</div>
+                ) : (
+                  stats.inventory.slice().reverse().map(item => (
+                    <div key={item.id} className={`bg-slate-900/50 border-2 rounded-2xl p-4 flex justify-between items-center transition-all ${item.isEquipped ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800'}`}>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase tracking-tighter" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</span>
+                          <span className="bg-slate-800 text-[8px] px-1.5 py-0.5 rounded text-slate-400 font-bold">D{item.degree}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                          {item.atkBonus > 0 && <div className="text-[9px] text-amber-500 font-bold">ATK +{item.atkBonus}</div>}
+                          {item.defBonus > 0 && <div className="text-[9px] text-sky-500 font-bold">DEF +{item.defBonus}</div>}
+                          {item.hpBonus > 0 && <div className="text-[9px] text-red-500 font-bold">HP +{item.hpBonus}</div>}
+                        </div>
+                      </div>
+                      <button onClick={() => handleEquip(item.id)} className={`ml-4 px-4 py-2 rounded-xl text-[9px] font-black transition-all ${item.isEquipped ? 'bg-red-600 text-white' : 'bg-amber-600 text-black shadow-lg'}`}>
+                        {item.isEquipped ? 'ÇIKAR' : 'GİY'}
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             )}
             {activeTab === 'DNG' && (
@@ -355,9 +462,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-            )}
-            {activeTab === 'BAG' && (
-              <div className="text-center text-slate-500 mt-20 text-xs">Çantan henüz boş. Canavar avlayarak eşya topla!</div>
             )}
           </div>
         </div>
