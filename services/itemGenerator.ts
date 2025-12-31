@@ -5,20 +5,13 @@ import { createSeededRng, makeSeed } from './seededRng.ts';
 type GenerateDropArgs = {
   mobLvl: number;
   isBoss?: boolean;
-  dropBoost?: boolean; // VIP dropBoost veya premium
-  seed?: number;       // deterministic loot istersen
+  dropBoost?: boolean;
+  seed?: number;
 };
 
 const SLOT_POOL: ItemSlot[] = [
-  'WEAPON',
-  'SHIELD',
-  'ACCESSORY',
-  'HEAD',
-  'SHOULDERS',
-  'CHEST',
-  'HANDS',
-  'LEGS',
-  'FEET',
+  'WEAPON', 'SHIELD', 'ACCESSORY',
+  'HEAD', 'SHOULDERS', 'CHEST', 'HANDS', 'LEGS', 'FEET',
 ];
 
 function typeFromSlot(slot: ItemSlot): ItemType {
@@ -59,14 +52,11 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
   const seed = args.seed ?? makeSeed('drop', mobLvl, isBoss ? 1 : 0, Date.now());
   const rand = createSeededRng(seed);
 
-  // Drop rate
   let baseRate = isBoss ? 0.80 : 0.12;
   if (dropBoost) baseRate = Math.min(0.95, baseRate * 2);
-
   if (rand() > baseRate) return null;
 
   const { rarity, mult: rarityMult } = rarityRoll(rand);
-
   const slot = SLOT_POOL[Math.floor(rand() * SLOT_POOL.length)];
   const type = typeFromSlot(slot);
 
@@ -103,6 +93,7 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
     atkBonus,
     defBonus,
     hpBonus,
+    plus: 0,
     isEquipped: false,
   };
 }
