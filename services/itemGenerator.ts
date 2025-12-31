@@ -6,7 +6,7 @@ type GenerateDropArgs = {
   mobLvl: number;
   isBoss?: boolean;
   dropBoost?: boolean; // VIP dropBoost veya premium
-  seed?: number;       // istersen deterministic loot
+  seed?: number;       // deterministic loot istersen
 };
 
 const SLOT_POOL: ItemSlot[] = [
@@ -30,11 +30,6 @@ function typeFromSlot(slot: ItemSlot): ItemType {
 
 function rarityRoll(rand: () => number): { rarity: ItemRarity; mult: number } {
   const r = rand();
-  // SRO tadında nadirlik
-  // SUN: 0.2%
-  // MOON: 1%
-  // STAR: 5%
-  // COMMON: kalan
   if (r < 0.002) return { rarity: 'SUN', mult: 2.5 };
   if (r < 0.010) return { rarity: 'MOON', mult: 1.8 };
   if (r < 0.050) return { rarity: 'STAR', mult: 1.4 };
@@ -61,26 +56,21 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
   const isBoss = !!args.isBoss;
   const dropBoost = !!args.dropBoost;
 
-  // RNG seçimi
   const seed = args.seed ?? makeSeed('drop', mobLvl, isBoss ? 1 : 0, Date.now());
   const rand = createSeededRng(seed);
 
   // Drop rate
-  let baseRate = isBoss ? 0.80 : 0.12;   // Boss %80, normal %12
-  if (dropBoost) baseRate = Math.min(0.95, baseRate * 2); // 2x, cap %95
+  let baseRate = isBoss ? 0.80 : 0.12;
+  if (dropBoost) baseRate = Math.min(0.95, baseRate * 2);
 
   if (rand() > baseRate) return null;
 
   const { rarity, mult: rarityMult } = rarityRoll(rand);
 
-  // Slot seçimi
   const slot = SLOT_POOL[Math.floor(rand() * SLOT_POOL.length)];
   const type = typeFromSlot(slot);
 
-  // Degree
   const degree = degreeFromLevel(mobLvl);
-
-  // Stat üretimi (basit ama SRO hissi verir)
   const baseStat = degree * 15;
 
   let atkBonus = 0;
@@ -95,7 +85,6 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
   } else if (slot === 'ACCESSORY') {
     hpBonus = Math.floor(baseStat * 12 * rarityMult);
   } else {
-    // Armor parça
     defBonus = Math.floor(baseStat * 0.9 * rarityMult);
     hpBonus = Math.floor(baseStat * 6.5 * rarityMult);
   }
