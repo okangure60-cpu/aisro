@@ -4,7 +4,7 @@ import { StatusBar } from './components/StatusBar';
 import { PlayerStats, ActiveMob, DamagePop, Item, ItemRarity, ItemType, Skill, PlayerDebuff, MobAbilityType, DungeonTemplate, MarketListing } from './types';
 import { SRO_MOBS, SRO_SKILLS, SRO_DUNGEONS, getXpRequired, RARITY_COLORS, POTION_CONFIG } from './constants';
 
-const STORAGE_KEY = 'sro_legend_journey_stats_v8';
+const STORAGE_KEY = 'sro_legend_journey_stats_v9';
 
 type ActiveTab = 'GAME' | 'BAG' | 'NPC' | 'DNG' | 'MARKET' | 'VIP';
 
@@ -15,12 +15,13 @@ const App: React.FC = () => {
       try {
         const parsed = JSON.parse(saved);
         if (!parsed.potions) parsed.potions = { hp: 10, mp: 10 };
+        if (!parsed.unlockedSkills) parsed.unlockedSkills = ['normal'];
         return parsed;
       } catch (e) { console.warn(e); }
     }
     return {
       lvl: 1, xp: 0, gold: 0, hp: 300, maxHp: 300, mp: 200, maxMp: 200, atk: 25, def: 12,
-      inventory: [], potions: { hp: 10, mp: 10 }, isPremium: false, autoPotionEnabled: false
+      inventory: [], potions: { hp: 10, mp: 10 }, unlockedSkills: ['normal'], isPremium: false, autoPotionEnabled: false
     };
   });
 
@@ -31,8 +32,10 @@ const App: React.FC = () => {
   const [activeDungeon, setActiveDungeon] = useState<{ template: DungeonTemplate, currentWave: number } | null>(null);
   const [skillCooldowns, setSkillCooldowns] = useState<Record<string, number>>({});
   const [activeDebuffs, setActiveDebuffs] = useState<PlayerDebuff[]>([]);
-  const nextPopId = useRef(0);
+  const [toast, setToast] = useState<string | null>(null);
+  const [shopQuantities, setShopQuantities] = useState<Record<string, number>>({ hp: 1, mp: 1 });
   
+  const nextPopId = useRef(0);
   const tg = (window as any).Telegram?.WebApp;
 
   useEffect(() => {
@@ -48,10 +51,14 @@ const App: React.FC = () => {
     }
   }, [tg]);
 
-  // Otomatik Kayıt: Her stats değişiminde localStorage'a yazar
   useEffect(() => { 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); 
   }, [stats]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
 
   const equippedItems = useMemo(() => stats.inventory.filter(i => i.isEquipped), [stats.inventory]);
   const bonusAtk = useMemo(() => equippedItems.reduce((s, i) => s + i.atkBonus, 0), [equippedItems]);
@@ -81,24 +88,18 @@ const App: React.FC = () => {
   const generateRandomItem = (lvl: number): Item => {
     const types: ItemType[] = ['WEAPON', 'SHIELD', 'ARMOR', 'HELMET', 'ACCESSORY'];
     const type = types[Math.floor(Math.random() * types.length)];
-    
     const roll = Math.random();
     let rarity: ItemRarity = 'COMMON';
-    let multiplier = 1;
-    let prefix = "";
+    let multiplier = 1, prefix = "";
 
     if (roll < 0.02) { rarity = 'SUN'; multiplier = 3.5; prefix = "Seal of Sun "; }
     else if (roll < 0.10) { rarity = 'MOON'; multiplier = 2.5; prefix = "Seal of Moon "; }
     else if (roll < 0.30) { rarity = 'STAR'; multiplier = 1.8; prefix = "Seal of Star "; }
-    
     const baseVal = lvl * 2 * multiplier;
-    
     return {
       id: Math.random().toString(36).substr(2, 9),
       name: `${prefix}${type === 'WEAPON' ? 'Blade' : type === 'SHIELD' ? 'Shield' : 'Plate'}`,
-      type,
-      rarity,
-      lvl,
+      type, rarity, lvl,
       atkBonus: type === 'WEAPON' ? Math.floor(baseVal * 2.5) : 0,
       defBonus: (type === 'ARMOR' || type === 'SHIELD' || type === 'HELMET') ? Math.floor(baseVal * 1.2) : 0,
       hpBonus: (type === 'ACCESSORY' || type === 'HELMET') ? Math.floor(baseVal * 5) : 0,
@@ -156,19 +157,45 @@ const App: React.FC = () => {
     setStats(prev => {
       const newHp = prev.hp - finalDmg;
       if (newHp <= 0) {
+        // ÖLÜM CEZASI: %3 XP KAYBI
+        const xpPenalty = Math.floor(getXpRequired(prev.lvl) * 0.03);
+        showToast(`Öldün! %3 XP (${xpPenalty}) kaybedildi.`);
         setActiveDungeon(null);
-        return { ...prev, hp: totalMaxHp, mp: prev.maxMp };
+        return { ...prev, hp: totalMaxHp, mp: prev.maxMp, xp: Math.max(0, prev.xp - xpPenalty) };
       }
       return { ...prev, hp: newHp };
     });
   }, [currentMob, totalDef, totalMaxHp]);
 
+  const unlockSkill = (skill: Skill) => {
+    if (stats.lvl < (skill.unlockLvl || 0)) {
+      showToast(`Bu beceri için Lv.${skill.unlockLvl} olmalısın!`);
+      return;
+    }
+    if (stats.gold < (skill.unlockCost || 0)) {
+      showToast(`Bu beceri için ${skill.unlockCost} Altın gerekli!`);
+      return;
+    }
+    setStats(prev => ({
+      ...prev,
+      gold: prev.gold - (skill.unlockCost || 0),
+      unlockedSkills: [...prev.unlockedSkills, skill.id]
+    }));
+    showToast(`${skill.name} başarıyla açıldı!`);
+  };
+
   const useSkill = useCallback((skill: Skill) => {
     if (!currentMob || isStunned || skillCooldowns[skill.id]) return;
+    
+    // Skill kilitli mi kontrolü
+    if (!stats.unlockedSkills.includes(skill.id)) {
+      unlockSkill(skill);
+      return;
+    }
+
     if (stats.mp < skill.mpCost) { addDamagePop("MP!", "#0ea5e9"); return; }
     
     setStats(prev => ({ ...prev, mp: prev.mp - skill.mpCost }));
-    // Bekleme süresini başlat (Normal vuruş dahil)
     setSkillCooldowns(prev => ({ ...prev, [skill.id]: Date.now() + skill.cooldown }));
     
     const dmg = Math.floor(totalAtk * skill.damageMultiplier * (Math.random() < 0.1 ? 2.0 : 1.0));
@@ -178,24 +205,16 @@ const App: React.FC = () => {
       if (!prev) return null;
       const newHp = prev.curHp - dmg;
       if (newHp <= 0) {
-        // Zindanda ise 2x XP
         const xpMultiplier = activeDungeon ? 2 : 1;
         const xpReward = (prev.lvl / 2) * xpMultiplier;
-        
         if (activeDungeon) {
           if (prev.isBoss) {
             const dropRoll = Math.random();
             if (dropRoll < activeDungeon.template.specialDropRate) {
               const newItem = generateRandomItem(stats.lvl);
-              setStats(s => ({
-                ...s,
-                inventory: [...s.inventory, newItem],
-                gold: s.gold + prev.goldReward
-              }));
+              setStats(s => ({ ...s, inventory: [...s.inventory, newItem], gold: s.gold + prev.goldReward }));
               addDamagePop("ITEM DROP!", RARITY_COLORS[newItem.rarity]);
-            } else {
-              setStats(s => ({...s, gold: s.gold + prev.goldReward}));
-            }
+            } else { setStats(s => ({...s, gold: s.gold + prev.goldReward})); }
             setActiveDungeon(null);
           } else {
             setStats(s => {
@@ -216,23 +235,63 @@ const App: React.FC = () => {
       }
       return { ...prev, curHp: newHp };
     });
-    
     if (Math.random() < 0.3) mobAttack();
-  }, [currentMob, isStunned, skillCooldowns, stats.mp, totalAtk, mobAttack, activeDungeon, stats.lvl]);
+  }, [currentMob, isStunned, skillCooldowns, stats.mp, totalAtk, mobAttack, activeDungeon, stats.lvl, stats.unlockedSkills, stats.gold]);
+
+  const buyPotion = (type: 'hp' | 'mp', config: any) => {
+    const qty = shopQuantities[type];
+    const totalCost = config.cost * qty;
+    if (stats.gold < totalCost) { showToast("Yetersiz Altın!"); return; }
+    
+    setStats(prev => ({
+      ...prev,
+      gold: prev.gold - totalCost,
+      potions: { ...prev.potions, [type]: prev.potions[type] + qty }
+    }));
+    showToast(`${qty} Adet ${config.name} alındı!`);
+  };
 
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden bg-[#020617] text-slate-200">
-      <div className="absolute top-0 left-0 z-[100] p-1 pointer-events-none">
-        <span className="text-[8px] font-mono text-slate-600">v1.0.3</span>
-      </div>
+      {toast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[1000] bg-amber-600 text-black px-6 py-2 rounded-full text-xs font-black shadow-2xl animate-bounce">
+          {toast}
+        </div>
+      )}
+
       <StatusBar stats={{...stats, maxHp: totalMaxHp}} totalAtk={totalAtk} totalDef={totalDef} />
       
       <div className={`fixed inset-0 z-[9999] bg-[#020617] flex flex-col p-6 transition-transform duration-300 ${activeTab === 'GAME' ? 'translate-y-full' : 'translate-y-0'}`}>
         <div className="flex justify-between items-center mb-6 border-b border-slate-800 pb-2">
-           <h2 className="text-xl font-black text-amber-500 italic uppercase">{activeTab === 'DNG' ? 'ZINDANLAR' : activeTab === 'BAG' ? 'ÇANTA' : activeTab}</h2>
+           <h2 className="text-xl font-black text-amber-500 italic uppercase">{activeTab === 'DNG' ? 'ZINDANLAR' : activeTab === 'BAG' ? 'ÇANTA' : activeTab === 'NPC' ? 'MARKET' : activeTab}</h2>
            <button onClick={() => setActiveTab('GAME')} className="text-slate-400 text-3xl">✕</button>
         </div>
         <div className="flex-1 overflow-y-auto pb-24 custom-scrollbar">
+           {activeTab === 'NPC' && (
+             <div className="space-y-4">
+               {[POTION_CONFIG.HP_POTION, POTION_CONFIG.MP_POTION].map((pot, idx) => {
+                 const type = idx === 0 ? 'hp' : 'mp';
+                 return (
+                  <div key={idx} className="bg-slate-900 p-5 rounded-2xl flex flex-col gap-4 border border-slate-800">
+                     <div className="flex justify-between items-center">
+                       <div className="flex flex-col">
+                          <span className="text-white text-xs font-bold">{pot.name}</span>
+                          <span className="text-slate-500 text-[9px]">Stok: {stats.potions[type]} | Birim: {pot.cost}G</span>
+                       </div>
+                       <div className="flex items-center gap-2 bg-black rounded-xl p-1 px-3 border border-slate-700">
+                          <button onClick={() => setShopQuantities(p => ({...p, [type]: Math.max(1, p[type] - 1)}))} className="text-amber-500 font-black">-</button>
+                          <span className="text-[10px] w-6 text-center">{shopQuantities[type]}</span>
+                          <button onClick={() => setShopQuantities(p => ({...p, [type]: Math.min(999, p[type] + 1)}))} className="text-amber-500 font-black">+</button>
+                       </div>
+                     </div>
+                     <button onClick={() => buyPotion(type, pot)} className="w-full bg-amber-600 text-black text-[10px] font-black py-2.5 rounded-xl uppercase">
+                        {pot.cost * shopQuantities[type]}G SATIN AL
+                     </button>
+                  </div>
+                 );
+               })}
+             </div>
+           )}
            {activeTab === 'BAG' && (
              <div className="space-y-3">
                {stats.inventory.map(item => (
@@ -256,19 +315,6 @@ const App: React.FC = () => {
                  </div>
                ))}
                {stats.inventory.length === 0 && <div className="text-center text-slate-500 text-xs py-10 italic">Çantanız boş...</div>}
-             </div>
-           )}
-           {activeTab === 'NPC' && (
-             <div className="space-y-4">
-               {[POTION_CONFIG.HP_POTION, POTION_CONFIG.MP_POTION].map((pot, idx) => (
-                  <div key={idx} className="bg-slate-900 p-5 rounded-2xl flex justify-between items-center border border-slate-800">
-                     <div className="flex flex-col">
-                        <span className="text-white text-xs font-bold">{pot.name}</span>
-                        <span className="text-slate-500 text-[9px]">Stok: {idx === 0 ? stats.potions.hp : stats.potions.mp}</span>
-                     </div>
-                     <button onClick={() => { if (stats.gold >= pot.cost) setStats(prev => ({...prev, gold: prev.gold - pot.cost, potions: {...prev.potions, [idx === 0 ? 'hp' : 'mp']: prev.potions[idx === 0 ? 'hp' : 'mp'] + 1}})); }} className="bg-amber-600 text-black text-xs font-black px-6 py-2 rounded-xl">{pot.cost}G</button>
-                  </div>
-               ))}
              </div>
            )}
            {activeTab === 'DNG' && (
@@ -316,7 +362,6 @@ const App: React.FC = () => {
               <img src={currentMob.img} className={`w-40 h-40 object-contain transition-all duration-75 active:scale-90 ${currentMob.isBoss ? 'scale-125 brightness-125 drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]' : ''}`} />
             </div>
 
-            {/* Hızlı Potion Butonları */}
             <div className="flex gap-4 w-full justify-center -mb-2">
               <button onClick={() => usePotion('hp')} className="bg-red-900/40 border border-red-500/50 px-3 py-1.5 rounded-xl flex items-center gap-2 active:scale-95">
                 <span className="text-lg">🧪</span>
@@ -329,18 +374,32 @@ const App: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-4 gap-3 w-full">
-              {SRO_SKILLS.map(skill => (
-                  <button key={skill.id} onClick={() => useSkill(skill)} disabled={!!skillCooldowns[skill.id] || isStunned}
-                    className={`relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center transition-all shadow-lg ${skillCooldowns[skill.id] ? 'opacity-40 bg-black border-slate-900 scale-95' : 'bg-slate-900 border-slate-700 active:scale-90 active:border-amber-500'}`}>
-                    {skillCooldowns[skill.id] && (
+              {SRO_SKILLS.map(skill => {
+                const isUnlocked = stats.unlockedSkills.includes(skill.id);
+                const isCooldown = !!skillCooldowns[skill.id];
+                return (
+                  <button key={skill.id} onClick={() => useSkill(skill)} disabled={isCooldown || isStunned}
+                    className={`relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center transition-all shadow-lg ${!isUnlocked ? 'bg-black/80 border-slate-800' : isCooldown ? 'opacity-40 bg-black border-slate-900 scale-95' : 'bg-slate-900 border-slate-700 active:scale-90 active:border-amber-500'}`}>
+                    {isCooldown && (
                       <div className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center z-10">
                         <span className="text-[10px] font-black text-white">{Math.ceil((skillCooldowns[skill.id] - Date.now())/1000)}s</span>
                       </div>
                     )}
-                    <span className="text-2xl mb-1">{skill.icon}</span>
-                    <span className="text-[6px] font-black text-slate-500 uppercase tracking-tighter">{skill.name.split(' ')[0]}</span>
+                    {!isUnlocked ? (
+                      <div className="flex flex-col items-center opacity-60">
+                        <span className="text-lg">🔒</span>
+                        <span className="text-[6px] font-black text-amber-500">LV.{skill.unlockLvl}</span>
+                        <span className="text-[6px] font-black text-amber-600">{skill.unlockCost!/1000}K</span>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-2xl mb-1">{skill.icon}</span>
+                        <span className="text-[6px] font-black text-slate-500 uppercase tracking-tighter">{skill.name.split(' ')[0]}</span>
+                      </>
+                    )}
                   </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : <div className="text-amber-500 animate-pulse font-black text-xs uppercase tracking-widest">Bölge Keşfediliyor...</div>}
