@@ -9,15 +9,23 @@ type GenerateDropArgs = {
   seed?: number;
 };
 
+// Slot havuzu: WEAPON / SHIELD / 6 armor / 4 takı
+// NOT: 'ACCESSORY' legacy slotu üretilmiyor (eski itemler için types'ta duruyor)
 const SLOT_POOL: ItemSlot[] = [
-  'WEAPON', 'SHIELD', 'ACCESSORY',
+  'WEAPON', 'SHIELD',
   'HEAD', 'SHOULDERS', 'CHEST', 'HANDS', 'LEGS', 'FEET',
+  'NECKLACE', 'EARRING', 'RING1', 'RING2',
 ];
 
 function typeFromSlot(slot: ItemSlot): ItemType {
   if (slot === 'WEAPON') return 'WEAPON';
   if (slot === 'SHIELD') return 'SHIELD';
-  if (slot === 'ACCESSORY') return 'ACCESSORY';
+
+  // Takılar + legacy ACCESSORY => ItemType ACCESSORY
+  if (slot === 'NECKLACE' || slot === 'EARRING' || slot === 'RING1' || slot === 'RING2' || slot === 'ACCESSORY') {
+    return 'ACCESSORY';
+  }
+
   return 'ARMOR';
 }
 
@@ -32,14 +40,18 @@ function rarityRoll(rand: () => number): { rarity: ItemRarity; mult: number } {
 function slotDisplay(slot: ItemSlot) {
   switch (slot) {
     case 'HEAD': return 'Head';
-    case 'SHOULDERS': return 'Shoulder';
+    case 'SHOULDERS': return 'Shoulders';
     case 'CHEST': return 'Chest';
     case 'HANDS': return 'Hands';
     case 'LEGS': return 'Legs';
     case 'FEET': return 'Feet';
     case 'WEAPON': return 'Weapon';
     case 'SHIELD': return 'Shield';
-    case 'ACCESSORY': return 'Accessory';
+    case 'NECKLACE': return 'Necklace';
+    case 'EARRING': return 'Earring';
+    case 'RING1': return 'Ring';
+    case 'RING2': return 'Ring';
+    case 'ACCESSORY': return 'Accessory'; // legacy
     default: return slot;
   }
 }
@@ -72,9 +84,11 @@ export function generateDrop(args: GenerateDropArgs): Item | null {
   } else if (slot === 'SHIELD') {
     defBonus = Math.floor(baseStat * 1.3 * rarityMult);
     hpBonus = Math.floor(baseStat * 2.5 * rarityMult);
-  } else if (slot === 'ACCESSORY') {
+  } else if (slot === 'NECKLACE' || slot === 'EARRING' || slot === 'RING1' || slot === 'RING2' || slot === 'ACCESSORY') {
+    // Takılar: HP ağırlıklı (istersen sonra ring/necklace ayrı ayrı oranları da yaparız)
     hpBonus = Math.floor(baseStat * 12 * rarityMult);
   } else {
+    // Armor parçaları
     defBonus = Math.floor(baseStat * 0.9 * rarityMult);
     hpBonus = Math.floor(baseStat * 6.5 * rarityMult);
   }
