@@ -30,6 +30,8 @@ export interface Skill {
   cooldown: number;
   icon: string;
   color: string;
+  unlockLvl?: number;
+  unlockCost?: number;
 }
 
 export type MobAbilityType = 'POISON' | 'CHARGE' | 'STUN';
@@ -55,6 +57,7 @@ export interface PlayerStats {
     hp: number;
     mp: number;
   };
+  unlockedSkills: string[];
   isPremium?: boolean;
   autoPotionEnabled?: boolean;
 }
