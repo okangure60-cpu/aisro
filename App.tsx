@@ -71,24 +71,22 @@ const App: React.FC = () => {
     return stats.def + bonus;
   }, [stats]);
 
-  // --- SLOT-BASED EQUIP (SRO STYLE) ---
+  // Equip/Unequip -> SLOT bazlı (SRO 6 armor slot)
   const handleEquip = (itemId: string) => {
     setStats(prev => {
       if (!prev) return null;
       const item = prev.inventory.find(i => i.id === itemId);
       if (!item) return prev;
 
-      // required lvl check (SRO)
-      if (!item.isEquipped && prev.lvl < item.requiredLvl) {
-        showToast(`Bu eşya için Lv.${item.requiredLvl} gerekli!`);
-        return prev;
-      }
-
       const newInventory = prev.inventory.map(i => {
-        // aynı slot'taki diğer eşyayı çıkar
-        if (i.slot === item.slot && i.id !== itemId) return { ...i, isEquipped: false };
-        // seçileni giy/çıkar
-        if (i.id === itemId) return { ...i, isEquipped: !i.isEquipped };
+        // Aynı SLOT'taki diğer eşyayı çıkar
+        if (i.slot === item.slot && i.id !== itemId) {
+          return { ...i, isEquipped: false };
+        }
+        // Seçileni giy/çıkar
+        if (i.id === itemId) {
+          return { ...i, isEquipped: !i.isEquipped };
+        }
         return i;
       });
 
@@ -102,8 +100,9 @@ const App: React.FC = () => {
     let template;
     if (activeDungeon) {
       const isBoss = activeDungeon.currentWave === activeDungeon.template.waves;
-      if (isBoss) template = SRO_MOBS.find(m => m.id === activeDungeon.template.bossId);
-      else {
+      if (isBoss) {
+        template = SRO_MOBS.find(m => m.id === activeDungeon.template.bossId);
+      } else {
         const pool = SRO_MOBS.filter(m => activeDungeon.template.mobPool.includes(m.id));
         template = pool[Math.floor(Math.random() * pool.length)];
       }
@@ -117,7 +116,9 @@ const App: React.FC = () => {
   }, [stats?.lvl, activeDungeon]);
 
   useEffect(() => {
-    if (stats && !currentMob && activeTab === 'GAME') spawnMob();
+    if (stats && !currentMob && activeTab === 'GAME') {
+      spawnMob();
+    }
   }, [currentMob, spawnMob, activeTab, stats]);
 
   // Cooldown Cleanup
@@ -128,7 +129,10 @@ const App: React.FC = () => {
         const next = { ...prev };
         let changed = false;
         for (const id in next) {
-          if (next[id] <= now) { delete next[id]; changed = true; }
+          if (next[id] <= now) {
+            delete next[id];
+            changed = true;
+          }
         }
         return changed ? next : prev;
       });
@@ -223,21 +227,19 @@ const App: React.FC = () => {
     setCurrentMob(prev => {
       if (!prev) return null;
       const nh = prev.curHp - dmg;
-
       if (nh <= 0) {
         const xpMult = stats.vip.premium.active ? 2.5 : stats.vip.expBoost.active ? 2 : 1;
         const xp = Math.floor(prev.xpReward * xpMult);
 
-        // --- SRO DROP SYSTEM ---
+        // ✅ DROP SYSTEM (services/itemGenerator)
         const drop = generateDrop({
-          mob: prev,
-          player: stats,
-          dungeon: activeDungeon?.template ?? null
+          mobLvl: prev.lvl,
+          isBoss: !!prev.isBoss,
+          dropBoost: stats.vip.dropBoost.active || stats.vip.premium.active
         });
 
         setStats(s => {
           if (!s) return null;
-
           let nx = s.xp + xp;
           let nl = s.lvl;
           while (nx >= getXpRequired(nl) && nl < 140) { nx -= getXpRequired(nl); nl++; }
@@ -259,10 +261,8 @@ const App: React.FC = () => {
             setActiveDungeon(d => d ? { ...d, currentWave: d.currentWave + 1 } : null);
           }
         }
-
         return null;
       }
-
       return { ...prev, curHp: nh };
     });
 
@@ -286,50 +286,17 @@ const App: React.FC = () => {
       <div className="flex flex-col h-[100dvh] bg-[#020617] items-center justify-center p-8 text-center">
         <h1 className="text-3xl font-black text-amber-500 mb-6 italic tracking-tighter">SRO: EFSANE YOLCULUK</h1>
         <div className="w-full max-w-xs space-y-4">
-          <input
-            value={tempName}
-            onChange={e => setTempName(e.target.value)}
-            placeholder="Karakter Adı"
-            maxLength={12}
-            className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl p-4 text-white outline-none focus:border-amber-500"
-          />
+          <input value={tempName} onChange={e => setTempName(e.target.value)} placeholder="Karakter Adı" maxLength={12} className="w-full bg-slate-900 border-2 border-slate-800 rounded-2xl p-4 text-white outline-none focus:border-amber-500" />
           <div className="grid grid-cols-2 gap-2">
             {['Blade', 'Bow', 'Glavie', 'Spear'].map(b => (
-              <button
-                key={b}
-                onClick={() => setTempBuild(b)}
-                className={`p-3 rounded-xl font-black text-[10px] border-2 ${tempBuild === b ? 'bg-amber-600 border-amber-400 text-black' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
-              >
-                {b.toUpperCase()}
-              </button>
+              <button key={b} onClick={() => setTempBuild(b)} className={`p-3 rounded-xl font-black text-[10px] border-2 ${tempBuild === b ? 'bg-amber-600 border-amber-400 text-black' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>{b.toUpperCase()}</button>
             ))}
           </div>
-          <button
-            onClick={() => {
-              if (tempName.length < 3) return showToast("İsim çok kısa!");
-              setStats({
-                charName: tempName,
-                build: tempBuild,
-                lvl: 1,
-                xp: 0,
-                gold: 0,
-                hp: 300,
-                maxHp: 300,
-                mp: 200,
-                maxMp: 200,
-                atk: 25,
-                def: 12,
-                inventory: [],
-                potions: INITIAL_POTIONS,
-                unlockedSkills: ['normal'],
-                vip: INITIAL_VIP
-              });
-              setActiveTab('GAME');
-            }}
-            className="w-full bg-amber-600 py-4 rounded-2xl font-black text-black shadow-xl"
-          >
-            BAŞLA
-          </button>
+          <button onClick={() => {
+            if (tempName.length < 3) return showToast("İsim çok kısa!");
+            setStats({ charName: tempName, build: tempBuild, lvl: 1, xp: 0, gold: 0, hp: 300, maxHp: 300, mp: 200, maxMp: 200, atk: 25, def: 12, inventory: [], potions: INITIAL_POTIONS, unlockedSkills: ['normal'], vip: INITIAL_VIP });
+            setActiveTab('GAME');
+          }} className="w-full bg-amber-600 py-4 rounded-2xl font-black text-black shadow-xl">BAŞLA</button>
         </div>
       </div>
     );
@@ -371,31 +338,12 @@ const App: React.FC = () => {
                         <div className="text-[9px] text-slate-500">+{pot.heal} Can/Mana | Adet: {stats.potions[key.toLowerCase() as keyof PotionStats]}</div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <input
-                          type="number"
-                          min="1"
-                          max="999"
-                          value={qty}
-                          onChange={e => setShopQuantities({ ...shopQuantities, [key]: parseInt(e.target.value) || 1 })}
-                          className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs"
-                        />
-                        <button
-                          onClick={() => {
-                            if (stats.gold < currentCost) return showToast("Yetersiz Gold!");
-                            setStats(s => ({
-                              ...s!,
-                              gold: s!.gold - currentCost,
-                              potions: {
-                                ...s!.potions,
-                                [key.toLowerCase() as keyof PotionStats]: s!.potions[key.toLowerCase() as keyof PotionStats] + qty
-                              }
-                            }));
-                            showToast(`${qty} adet satın alındı!`);
-                          }}
-                          className="bg-amber-600 text-black text-[9px] font-black px-3 py-2 rounded-lg"
-                        >
-                          {currentCost.toLocaleString()}G
-                        </button>
+                        <input type="number" min="1" max="999" value={qty} onChange={e => setShopQuantities({ ...shopQuantities, [key]: parseInt(e.target.value) || 1 })} className="w-12 bg-black border border-slate-700 rounded p-1 text-center text-xs" />
+                        <button onClick={() => {
+                          if (stats.gold < currentCost) return showToast("Yetersiz Gold!");
+                          setStats(s => ({ ...s!, gold: s!.gold - currentCost, potions: { ...s!.potions, [key.toLowerCase() as keyof PotionStats]: s!.potions[key.toLowerCase() as keyof PotionStats] + qty } }));
+                          showToast(`${qty} adet satın alındı!`);
+                        }} className="bg-amber-600 text-black text-[9px] font-black px-3 py-2 rounded-lg">{currentCost.toLocaleString()}G</button>
                       </div>
                     </div>
                   );
@@ -409,40 +357,20 @@ const App: React.FC = () => {
                   <div className="text-center text-slate-500 mt-20 text-xs">Çantan henüz boş. Canavar avlayarak eşya topla!</div>
                 ) : (
                   stats.inventory.slice().reverse().map(item => (
-                    <div
-                      key={item.id}
-                      className={`bg-slate-900/50 border-2 rounded-2xl p-4 flex justify-between items-center transition-all ${item.isEquipped ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800'}`}
-                    >
+                    <div key={item.id} className={`bg-slate-900/50 border-2 rounded-2xl p-4 flex justify-between items-center transition-all ${item.isEquipped ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800'}`}>
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-black uppercase tracking-tighter" style={{ color: RARITY_COLORS[item.rarity] }}>
-                            {item.name}
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black uppercase tracking-tighter" style={{ color: RARITY_COLORS[item.rarity] }}>{item.name}</span>
                           <span className="bg-slate-800 text-[8px] px-1.5 py-0.5 rounded text-slate-400 font-bold">D{item.degree}</span>
-                          <span className="bg-slate-800 text-[8px] px-1.5 py-0.5 rounded text-slate-400 font-bold">{item.slot}</span>
-                          <span className="bg-black/40 text-[8px] px-1.5 py-0.5 rounded text-slate-300 font-bold">Lv.{item.requiredLvl}</span>
+                          <span className="bg-black/50 text-[8px] px-1.5 py-0.5 rounded text-slate-500 font-bold">{item.slot}</span>
                         </div>
-
                         <div className="grid grid-cols-3 gap-2 mt-2">
                           {item.atkBonus > 0 && <div className="text-[9px] text-amber-500 font-bold">ATK +{item.atkBonus}</div>}
                           {item.defBonus > 0 && <div className="text-[9px] text-sky-500 font-bold">DEF +{item.defBonus}</div>}
                           {item.hpBonus > 0 && <div className="text-[9px] text-red-500 font-bold">HP +{item.hpBonus}</div>}
                         </div>
-
-                        {(item.plus > 0 || item.blues.length > 0) && (
-                          <div className="mt-2 text-[8px] text-slate-400">
-                            {item.plus > 0 && <div className="font-black text-amber-300">+{item.plus}</div>}
-                            {item.blues.slice(0, 3).map((b, idx) => (
-                              <div key={idx} className="text-slate-500">• {b.key} +{b.value}</div>
-                            ))}
-                          </div>
-                        )}
                       </div>
-
-                      <button
-                        onClick={() => handleEquip(item.id)}
-                        className={`ml-4 px-4 py-2 rounded-xl text-[9px] font-black transition-all ${item.isEquipped ? 'bg-red-600 text-white' : 'bg-amber-600 text-black shadow-lg'}`}
-                      >
+                      <button onClick={() => handleEquip(item.id)} className={`ml-4 px-4 py-2 rounded-xl text-[9px] font-black transition-all ${item.isEquipped ? 'bg-red-600 text-white' : 'bg-amber-600 text-black shadow-lg'}`}>
                         {item.isEquipped ? 'ÇIKAR' : 'GİY'}
                       </button>
                     </div>
@@ -463,10 +391,7 @@ const App: React.FC = () => {
                           <div className="text-[8px] font-bold text-amber-500">Lv.{dng.minLvl}+</div>
                           <div className="text-[8px] font-bold text-slate-500">{dng.waves} Dalga</div>
                         </div>
-                        <button
-                          onClick={() => startDungeon(dng)}
-                          className="bg-amber-600 text-black px-6 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-transform"
-                        >
+                        <button onClick={() => startDungeon(dng)} className="bg-amber-600 text-black px-6 py-2 rounded-xl font-black text-xs shadow-lg active:scale-95 transition-transform">
                           GİR ({dng.entryFee.toLocaleString()}G)
                         </button>
                       </div>
@@ -521,19 +446,8 @@ const App: React.FC = () => {
             </div>
 
             <div className="relative h-44 w-full flex items-center justify-center" onClick={() => useSkill(SRO_SKILLS[0])}>
-              {damagePops.map(p => (
-                <div
-                  key={p.id}
-                  className="absolute dmg-float font-black text-3xl italic pointer-events-none z-50"
-                  style={{ left: p.x + '%', top: p.y + '%', color: p.color }}
-                >
-                  {p.textValue}
-                </div>
-              ))}
-              <img
-                src={currentMob.img}
-                className={`w-32 h-32 object-contain active:scale-95 transition-transform ${currentMob.isBoss ? 'scale-150 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : ''}`}
-              />
+              {damagePops.map(p => <div key={p.id} className="absolute dmg-float font-black text-3xl italic pointer-events-none z-50" style={{ left: p.x + '%', top: p.y + '%', color: p.color }}>{p.textValue}</div>)}
+              <img src={currentMob.img} className={`w-32 h-32 object-contain active:scale-95 transition-transform ${currentMob.isBoss ? 'scale-150 drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]' : ''}`} />
             </div>
 
             <div className="flex gap-2 w-full justify-center">
@@ -554,11 +468,7 @@ const App: React.FC = () => {
                 const unlocked = stats.unlockedSkills.includes(s.id);
                 const cd = !!skillCooldowns[s.id];
                 return (
-                  <button
-                    key={s.id}
-                    onClick={() => useSkill(s)}
-                    className={`relative aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all ${!unlocked ? 'bg-black/50 border-slate-800 opacity-60' : cd ? 'bg-slate-800 border-slate-900' : 'bg-slate-900 border-slate-700 active:scale-90 shadow-xl'}`}
-                  >
+                  <button key={s.id} onClick={() => useSkill(s)} className={`relative aspect-square rounded-xl border-2 flex flex-col items-center justify-center transition-all ${!unlocked ? 'bg-black/50 border-slate-800 opacity-60' : cd ? 'bg-slate-800 border-slate-900' : 'bg-slate-900 border-slate-700 active:scale-90 shadow-xl'}`}>
                     {unlocked ? <span className="text-xl">{s.icon}</span> : <span className="text-[8px] font-black text-amber-600">Lv.{s.unlockLvl}</span>}
                     {cd && s.id !== 'normal' && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-[9px] font-black rounded-xl">CD</div>}
                   </button>
