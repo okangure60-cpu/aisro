@@ -20,6 +20,28 @@ const INITIAL_POTIONS: PotionStats = { hp_s: 10, hp_m: 0, hp_l: 0, mp_s: 10, mp_
 
 const ARMOR_SLOTS: ItemSlot[] = ['HEAD','SHOULDERS','CHEST','HANDS','LEGS','FEET'];
 
+// ✅ BAG sıralama: WEAPON -> SHIELD -> ARMOR(6) -> Takılar -> legacy ACCESSORY
+const INVENTORY_SLOT_ORDER: ItemSlot[] = [
+  'WEAPON',
+  'SHIELD',
+  'HEAD', 'SHOULDERS', 'CHEST', 'HANDS', 'LEGS', 'FEET',
+  'NECKLACE', 'EARRING', 'RING1', 'RING2',
+  'ACCESSORY', // legacy (eski itemler bozulmasın diye en sonda)
+];
+
+const slotOrderIndex = (slot: ItemSlot) => {
+  const idx = INVENTORY_SLOT_ORDER.indexOf(slot);
+  return idx === -1 ? 999 : idx;
+};
+
+const rarityRank = (r: any) => {
+  // COMMON < STAR < MOON < SUN
+  if (r === 'SUN') return 4;
+  if (r === 'MOON') return 3;
+  if (r === 'STAR') return 2;
+  return 1;
+};
+
 const App: React.FC = () => {
   const [stats, setStats] = useState<PlayerStats | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -404,7 +426,61 @@ const App: React.FC = () => {
     showToast("VIP Aktif!");
   };
 
-  const invForEnhance = stats.inventory.slice().reverse();
+  // ✅ Enhance dropdown'u da slot sırasına göre şık dursun (reverse değil)
+  const invForEnhance = useMemo(() => {
+    const copy = [...stats.inventory];
+    copy.sort((a, b) => {
+      const so = slotOrderIndex(a.slot) - slotOrderIndex(b.slot);
+      if (so !== 0) return so;
+
+      // Equipped önce
+      if (a.isEquipped !== b.isEquipped) return a.isEquipped ? -1 : 1;
+
+      // Degree desc
+      if (a.degree !== b.degree) return b.degree - a.degree;
+
+      // Rarity desc
+      const rr = rarityRank(b.rarity) - rarityRank(a.rarity);
+      if (rr !== 0) return rr;
+
+      // Plus desc
+      if (a.plus !== b.plus) return b.plus - a.plus;
+
+      // Lvl desc
+      if (a.lvl !== b.lvl) return b.lvl - a.lvl;
+
+      return a.name.localeCompare(b.name);
+    });
+    return copy;
+  }, [stats.inventory]);
+
+  // ✅ BAG listesi: slot order + içeride güzel sıralama
+  const invForBag = useMemo(() => {
+    const copy = [...stats.inventory];
+    copy.sort((a, b) => {
+      const so = slotOrderIndex(a.slot) - slotOrderIndex(b.slot);
+      if (so !== 0) return so;
+
+      // Slot içinde: equipped önce
+      if (a.isEquipped !== b.isEquipped) return a.isEquipped ? -1 : 1;
+
+      // Degree desc
+      if (a.degree !== b.degree) return b.degree - a.degree;
+
+      // Rarity desc
+      const rr = rarityRank(b.rarity) - rarityRank(a.rarity);
+      if (rr !== 0) return rr;
+
+      // Plus desc
+      if (a.plus !== b.plus) return b.plus - a.plus;
+
+      // Lvl desc
+      if (a.lvl !== b.lvl) return b.lvl - a.lvl;
+
+      return a.name.localeCompare(b.name);
+    });
+    return copy;
+  }, [stats.inventory]);
 
   return (
     <div className="flex flex-col h-[100dvh] bg-[#020617] text-slate-200 overflow-hidden">
@@ -573,13 +649,13 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* ✅ BAG: Equip + Sell */}
+            {/* ✅ BAG: sıralı inventory */}
             {activeTab === 'BAG' && (
               <div className="grid grid-cols-1 gap-3 pb-8">
                 {stats.inventory.length === 0 ? (
                   <div className="text-center text-slate-500 mt-20 text-xs">Çantan henüz boş.</div>
                 ) : (
-                  stats.inventory.slice().reverse().map(item => (
+                  invForBag.map(item => (
                     <div key={item.id} className={`bg-slate-900/50 border-2 rounded-2xl p-4 flex justify-between items-center transition-all ${item.isEquipped ? 'border-emerald-500/50 bg-emerald-950/10' : 'border-slate-800'}`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
