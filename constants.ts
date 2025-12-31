@@ -23,7 +23,9 @@ export const SRO_SKILLS: Skill[] = [
     damageMultiplier: 1.0,
     cooldown: 500,
     icon: '⚔️',
-    color: '#f8fafc'
+    color: '#f8fafc',
+    unlockLvl: 0,
+    unlockCost: 0
   },
   {
     id: 'triple_swing',
@@ -32,7 +34,9 @@ export const SRO_SKILLS: Skill[] = [
     damageMultiplier: 2.2,
     cooldown: 4000,
     icon: '🌪️',
-    color: '#fcd34d'
+    color: '#fcd34d',
+    unlockLvl: 5,
+    unlockCost: 10000
   },
   {
     id: 'soul_spear',
@@ -41,7 +45,9 @@ export const SRO_SKILLS: Skill[] = [
     damageMultiplier: 4.5,
     cooldown: 12000,
     icon: '✨',
-    color: '#38bdf8'
+    color: '#38bdf8',
+    unlockLvl: 15,
+    unlockCost: 50000
   },
   {
     id: 'dragon_roar',
@@ -50,7 +56,9 @@ export const SRO_SKILLS: Skill[] = [
     damageMultiplier: 12.0,
     cooldown: 45000,
     icon: '🔥',
-    color: '#ef4444'
+    color: '#ef4444',
+    unlockLvl: 30,
+    unlockCost: 200000
   }
 ];
 
