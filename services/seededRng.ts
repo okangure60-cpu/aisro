@@ -1,31 +1,22 @@
-export function xmur3(str: string) {
-  let h = 1779033703 ^ str.length;
+// Basit deterministic RNG: Mulberry32
+export function createSeededRng(seed: number) {
+  let t = seed >>> 0;
+  return function rand() {
+    t += 0x6D2B79F5;
+    let x = t;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Seed üretimi (ör. mob lvl + time gibi)
+export function makeSeed(...parts: Array<number | string>) {
+  const str = parts.join('|');
+  let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
-    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
   }
-  return function () {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    return (h ^= h >>> 16) >>> 0;
-  };
-}
-
-export function mulberry32(seed: number) {
-  return function () {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function seededRandom(seedStr: string) {
-  const seedFn = xmur3(seedStr);
-  const rand = mulberry32(seedFn());
-  return {
-    next: () => rand(),
-    int: (min: number, max: number) => Math.floor(rand() * (max - min + 1)) + min,
-    pick: <T,>(arr: T[]) => arr[Math.floor(rand() * arr.length)],
-  };
+  return h >>> 0;
 }
