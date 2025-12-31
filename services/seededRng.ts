@@ -20,3 +20,13 @@ export function makeSeed(...parts: Array<number | string>) {
   }
   return h >>> 0;
 }
+
+/**
+ * Backward-compatible helper:
+ * itemGenerator.ts eski sürümde `seededRandom(seed)` bekliyor.
+ * Bu export ile build kesin düzelir.
+ */
+export function seededRandom(seed: number) {
+  const r = createSeededRng(seed);
+  return r();
+}
